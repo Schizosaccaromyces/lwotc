@@ -1,8 +1,10 @@
 //---------------------------------------------------------------------------------------
 //  FILE:    UIScreenListener_ShellDifficulty
-//  AUTHOR:  Amineri / Pavonis Interactive
+//  AUTHOR:  Amineri / Pavonis Interactive, Peter Ledbrook (LWOTC)
 //
-//  PURPOSE: Detects whether there are incompatible LWS mods when starting a new game
+//  PURPOSE: Detects whether there are incompatible LWS mods when starting a new game.
+//           Also loads saved second wave options and applies them to the screen so
+//           players don't have to change the second wave options every new campaign.
 //--------------------------------------------------------------------------------------- 
 
 class UIScreenListener_ShellDifficulty extends UIScreenListener config(LW_Overhaul);
@@ -15,22 +17,93 @@ var localized array<string> Credits;
 
 event OnInit(UIScreen Screen)
 {
-	if (UIShellDifficulty(Screen) == none && UILoadGame(Screen) == none)
-		return;
+	local UIShellDifficultySW ShellDifficultyUI;
+	local SecondWavePersistentData SWPersistentData;
+	local SecondWavePersistentDataDefaults SWPersistentDataDefaults;
+	local int i, OptionIndex;
+	local bool UseDefaultOption;
 
-	// Check that the XComGame replacement is installed
-	CheckForXComGameReplacement();
+	ShellDifficultyUI = UIShellDifficultySW(Screen);
+	if (ShellDifficultyUI == none && UILoadGame(Screen) == none)
+		return;
 
 	// check for any duplicates of standalone mods that have been integrated into overhaul mod
 	CheckForDuplicateLWSMods(Screen);
 
 	UIShellDifficulty(Screen).ForceTutorialOff();
 
+	// Don't do the rest of the initialisation if this is the UILoadGame screen
+	if (ShellDifficultyUI == none)
+		return;
+
+	// Initialise second wave options with and saved settings
+	SWPersistentData = new class'SecondWavePersistentData';
+	SWPersistentDataDefaults = new class'SecondWavePersistentDataDefaults';
+	for (i = 0; i < ShellDifficultyUI.SecondWaveOptionsReal.Length; i++)
+	{
+		// Find the saved value for this second wave option. If there is
+		// no saved value, fall back to the configured default value if
+		// it exists.
+		UseDefaultOption = false;
+		OptionIndex = SWPersistentData.SecondWaveOptionList.Find('ID', ShellDifficultyUI.SecondWaveOptionsReal[i].OptionData.ID);
+		if (OptionIndex == INDEX_NONE)
+		{
+			OptionIndex = SWPersistentDataDefaults.SecondWaveOptionList.Find('ID', ShellDifficultyUI.SecondWaveOptionsReal[i].OptionData.ID);
+			UseDefaultOption = true;
+		}
+
+		if (OptionIndex != INDEX_NONE)
+		{
+			if (UseDefaultOption)
+			{
+				UIMechaListItem(ShellDifficultyUI.m_SecondWaveList.GetItem(i)).Checkbox.SetChecked(SWPersistentDataDefaults.SecondWaveOptionList[OptionIndex].IsChecked);
+			}
+			else
+			{
+				UIMechaListItem(ShellDifficultyUI.m_SecondWaveList.GetItem(i)).Checkbox.SetChecked(SWPersistentData.SecondWaveOptionList[OptionIndex].IsChecked);
+			}
+		}
+
+		// Disable Precision Explosives second wave option
+		if (ShellDifficultyUI.SecondWaveOptionsReal[i].OptionData.ID == 'ExplosiveFalloff')
+		{
+			UIMechaListItem(ShellDifficultyUI.m_SecondWaveList.GetItem(i)).Checkbox.SetChecked(false);
+			UIMechaListItem(ShellDifficultyUI.m_SecondWaveList.GetItem(i)).SetDisabled(true, class'UIListener_CampaignStartMenu'.default.strDisabledPrecisionExplosivesTooltip);
+		}
+	}
+
+	// If a valid difficulty has been saved, pre select that
+	if (SWPersistentData.IsDifficultySet && SWPersistentData.Difficulty >= 0 &&
+		SWPersistentData.Difficulty < `MAX_DIFFICULTY_INDEX)
+	{
+		for (i = 0; i < `MAX_DIFFICULTY_INDEX; i++)
+		{
+			switch (i)
+			{
+			case 0:
+				ShellDifficultyUI.m_DifficultyRookieMechaItem.Checkbox.SetChecked(SWPersistentData.Difficulty == i);
+				break;
+			case 1:
+				ShellDifficultyUI.m_DifficultyVeteranMechaItem.Checkbox.SetChecked(SWPersistentData.Difficulty == i);
+				break;
+			case 2:
+				ShellDifficultyUI.m_DifficultyCommanderMechaItem.Checkbox.SetChecked(SWPersistentData.Difficulty == i);
+				break;
+			case 3:
+				ShellDifficultyUI.m_DifficultyLegendMechaItem.Checkbox.SetChecked(SWPersistentData.Difficulty == i);
+				break;
+			}
+		}
+	}
+
+	// Apply the remembered setting for Disable Beginner VO
+	ShellDifficultyUI.m_FirstTimeVOMechaItem.Checkbox.SetChecked(SWPersistentData.DisableBeginnerVO);
+
 	// Disable credits for now. LWOTC TODO: Consider adding a button or something rather than
 	// overlapping screen real estate.
 	// if (UIShellDifficulty(Screen) != none)
 	// {
-	// 	AddLogoAndCredits(Screen);
+		// AddLogoAndCredits(Screen);
 	// }
 }
 
@@ -75,27 +148,6 @@ function AddLogoAndCredits(UIScreen Screen)
 	//CreditsText2.SetHTMLText(class'UIUtilities_Text'.static.GetColoredText(CreditsString, eUIState_Normal,,"CENTER"));
 	//CreditsText2.bg.SetAlpha(75);
 
-}
-
-function CheckForXComGameReplacement()
-{
-    local X2StrategyElementTemplate StrategyTemplate;
-    local LWXComGameVersionTemplate LWVersionTemplate;
-    local X2StrategyElementTemplateManager StrategyTemplateMgr;
-
-    StrategyTemplateMgr = class'X2StrategyElementTemplateManager'.static.GetStrategyElementTemplateManager();
-    StrategyTemplate = StrategyTemplateMgr.FindStrategyElementTemplate('LWXComGameVersion');
-
-	// TODO: Pop up a dialog similar to the duplicate mod check below once we can add new loc strings.
-    if (StrategyTemplate == none)
-    {
-        `Redscreen("Failed to locate XComGame Replacement!");
-    }
-    else
-    {
-        LWVersionTemplate = LWXComGameVersionTemplate(StrategyTemplate);
-        `Log("XComGame replacement version found: " $ LWVersionTemplate.GetVersionString());
-    }
 }
 
 function CheckForDuplicateLWSMods(UIScreen Screen)

@@ -4,11 +4,13 @@
 //  PURPOSE: Grants action under certain conditions
 //--------------------------------------------------------------------------------------- 
 
-class X2Effect_CloseEncounters extends X2Effect_Persistent config (LW_SoldierSkills);
+class X2Effect_CloseEncounters extends X2Effect_Persistent;
 
-var config int CE_USES_PER_TURN;
-var config array<name> CE_ABILITYNAMES;
-var config int CE_MAX_TILES;
+var name TriggerEventName;
+var name UsesCounterName;
+var int MaxUsesPerTurn;
+var int MaxTiles;
+var array<name> ApplicableAbilities;
 
 function RegisterForEvents(XComGameState_Effect EffectGameState)
 {
@@ -19,14 +21,14 @@ function RegisterForEvents(XComGameState_Effect EffectGameState)
 	EventMgr = `XEVENTMGR;
 	EffectObj = EffectGameState;
 	UnitState = XComGameState_Unit(`XCOMHISTORY.GetGameStateForObjectID(EffectGameState.ApplyEffectParameters.SourceStateObjectRef.ObjectID));
-	EventMgr.RegisterForEvent(EffectObj, 'CloseEncounters', EffectGameState.TriggerAbilityFlyover, ELD_OnStateSubmitted, , UnitState);
+	EventMgr.RegisterForEvent(EffectObj, TriggerEventName, EffectGameState.TriggerAbilityFlyover, ELD_OnStateSubmitted, , UnitState);
 }
 
 function bool PostAbilityCostPaid(XComGameState_Effect EffectState, XComGameStateContext_Ability AbilityContext, XComGameState_Ability kAbility, XComGameState_Unit SourceUnit, XComGameState_Item AffectWeapon, XComGameState NewGameState, const array<name> PreCostActionPoints, const array<name> PreCostReservePoints)
 {
 	local XComGameState_Ability					AbilityState;
 	local XComGameState_Unit					TargetUnit;
-	local UnitValue								CEUsesThisTurn;
+	local UnitValue								CEUsesThisTurn, HnRUsesThisTurn;
 	local int									iUsesThisTurn;
 	
 	if (SourceUnit.IsUnitAffectedByEffectName(class'X2Effect_Serial'.default.EffectName))
@@ -48,10 +50,16 @@ function bool PostAbilityCostPaid(XComGameState_Effect EffectState, XComGameStat
 	if (kAbility.SourceWeapon != EffectState.ApplyEffectParameters.ItemStateObjectRef)
 		return false;
 
-	SourceUnit.GetUnitValue ('CloseEncountersUses', CEUsesThisTurn);
+	SourceUnit.GetUnitValue (UsesCounterName, CEUsesThisTurn);
 	iUsesThisTurn = int(CEUsesThisTurn.fValue);
 
-	if (iUsesThisTurn >= default.CE_USES_PER_TURN)
+	if (iUsesThisTurn >= MaxUsesPerTurn)
+		return false;
+
+	SourceUnit.GetUnitValue (class'X2Effect_HitandRun'.default.HNRUsesName, HnRUsesThisTurn);
+	iUsesThisTurn = int(HnRUsesThisTurn.fValue);
+
+	if (iUsesThisTurn >= 1)
 		return false;
 
 	TargetUnit = XComGameState_Unit(NewGameState.GetGameStateForObjectID(AbilityContext.InputContext.PrimaryTarget.ObjectID));  	
@@ -60,9 +68,9 @@ function bool PostAbilityCostPaid(XComGameState_Effect EffectState, XComGameStat
 		return false;
 
 	//`LOG (string (SourceUnit.TileDistanceBetween(TargetUnit)));
-	//`LOG (string (default.CE_MAX_TILES));
+	//`LOG (string (MaxTiles));
 
-	if (SourceUnit.TileDistanceBetween(TargetUnit) > default.CE_MAX_TILES + 1)
+	if (SourceUnit.TileDistanceBetween(TargetUnit) > MaxTiles + 1)
 		return false;
 
 	//`LOG ("CE7");
@@ -76,7 +84,7 @@ function bool PostAbilityCostPaid(XComGameState_Effect EffectState, XComGameStat
 
 	if (AbilityState != none)
 	{
-		if (default.CE_ABILITYNAMES.Find(kAbility.GetMyTemplateName()) != -1)
+		if (ApplicableAbilities.Find(kAbility.GetMyTemplateName()) != -1)
 		{
 			//`LOG ("CE9");
 			
@@ -84,11 +92,19 @@ function bool PostAbilityCostPaid(XComGameState_Effect EffectState, XComGameStat
 			{
 				//`LOG ("CE10");
 				SourceUnit.ActionPoints.AddItem(class'X2CharacterTemplateManager'.default.StandardActionPoint);
-				SourceUnit.SetUnitFloatValue ('CloseEncountersUses', iUsesThisTurn + 1.0, eCleanup_BeginTurn);
+				SourceUnit.SetUnitFloatValue (UsesCounterName, iUsesThisTurn + 1.0, eCleanup_BeginTurn);
 				//NewGameState.AddStateObject(SourceUnit);
-				`XEVENTMGR.TriggerEvent('CloseEncounters', AbilityState, SourceUnit, NewGameState);
+				`XEVENTMGR.TriggerEvent(TriggerEventName, AbilityState, SourceUnit, NewGameState);
 			}
 		}
 	}
 	return false;
+}
+
+defaultproperties
+{
+	TriggerEventName = "CloseEncounters"
+	UsesCounterName = "CloseEncountersUses"
+	MaxUsesPerTurn = 1
+	MaxTiles = 4
 }

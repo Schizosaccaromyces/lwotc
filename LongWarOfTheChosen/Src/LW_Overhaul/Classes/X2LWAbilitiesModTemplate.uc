@@ -25,7 +25,6 @@ var config bool ALLOW_NEGATIVE_DODGE;
 var config bool DODGE_CONVERTS_GRAZE_TO_MISS;
 var config bool GUARANTEED_HIT_ABILITIES_IGNORE_GRAZE_BAND;
 var config bool DISABLE_LOST_HEADSHOT;
-var config int SHADOW_CRIT_MODIFIER;
 
 var config array<bool> HEADSHOT_ENABLED;
 
@@ -47,6 +46,20 @@ var config int MIND_SCORCH_BURN_CHANCE;
 
 var config float CHOSEN_REGENERATION_HEAL_VALUE_PCT;
 
+var config array<name> PISTOL_ABILITY_WEAPON_CATS;
+
+// Data structure for multi-shot abilities that need patching
+struct MultiShotAbility
+{
+	var name AbilityName;
+	var array<name> FollowUpAbilityNames;
+};
+
+var config bool USE_LOS_FOR_MULTI_SHOT_ABILITIES;
+var config array<MultiShotAbility> MULTI_SHOT_ABILITIES;
+
+var privatewrite X2Condition_Visibility GameplayVisibilityCondition;
+
 static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 {
     // Override the FinalizeHitChance calculation for abilities that use standard aim
@@ -63,6 +76,11 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			break;
 		case 'BondmateSolaceCleanse':
 			FixBondmateCleanse(Template);
+			break;
+		case 'BondmateDualStrikeFollowup':
+			// Fix performance issue where it considers every enemy on the map a
+			// valid target.
+			Template.AbilityTargetConditions.AddItem(default.GameplayVisibilityCondition);
 			break;
 		case 'LostHeadshotInit':
 			DisableLostHeadshot(Template);
@@ -87,11 +105,17 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			UpdatePurifierFlamethrower(Template);
 			break;
 		case 'Fuse':
-			MakeFreeAction(Template);
+			class'Helpers_LW'.static.MakeFreeAction(Template);
 			break;
 		case 'PriestStasis':
 			MakeAbilityNonTurnEnding(Template);
 			MakeAbilitiesUnusableOnLost(Template);
+			break;
+		case 'Solace':
+			RemoveRoboticsAsValidTargetsOfSolace(Template);
+			break;
+		case 'SolaceCleanse':
+			RemoveRoboticsAsValidTargetsOfSolaceCleanse(Template);
 			break;
 		case 'HolyWarriorDeath':
 			RemoveTheDeathFromHolyWarriorDeath(Template);
@@ -101,6 +125,9 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			break;
 		case 'RevivalProtocol':
 			AllowRevivalProtocolToRemoveStunned(Template);
+			break;
+		case 'DeadeyeDamage':
+			UseNewDeadeyeEffect(Template);
 			break;
 		case 'RestorativeMist':
 			AllowRestorativeMistToRemoveStunned(Template);
@@ -121,7 +148,7 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			MakeAbilitiesUnusableOnLost(Template);
 			break;
 		case 'ScanningProtocol':
-			MakeFreeAction(Template);
+			class'Helpers_LW'.static.MakeFreeAction(Template);
 			AddInitialScanningCharges(Template);
 			break;
 		case 'MindScorch':
@@ -135,6 +162,7 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			break;
 		case 'TeleportAlly':
 			BuffTeleportAlly(Template);
+			MakeAbilityWorkWhenBurning(Template);
 			break;
 		case 'ChosenSummonFollowers':
 			UpdateSummon(Template);
@@ -159,6 +187,7 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 			break;
 		case 'Slash_LW':
 		case 'SwordSlice_LW':
+		case 'CombativesCounterattack':
 			Template.PostActivationEvents.AddItem('SlashActivated');
 			break;
 		case 'DisruptorRifleCrit':
@@ -171,10 +200,42 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 		case 'HarborWave':
 			ReworkHarborWave(Template);
 			break;
+		case 'HunterRifleShot':
+			MakeAbilityWorkWhenBurning(Template);
+			break;
+
+		case 'PistolStandardShot':
+		case 'PistolOverwatchShot':
+		case 'FanFire':
+		case 'LightningHands':
+		case 'FaceOff':
+			AddDisablingShotEffect(Template);
+			Template.AddTargetEffect(class'X2Ability_Chosen'.static.HoloTargetEffect());
+			Template.AssociatedPassives.AddItem('Disabler');
+			break;
+		case 'MindShield':
+			DisplayMindShieldPassive(Template);
+			break;
 		default:
 			break;
 
 	}
+
+	// Update pistol abilities so that they don't appear unless a pistol
+	// or other suitable weapon is equipped.
+	switch (Template.DataName)
+	{
+		case 'ClutchShot':
+		case 'FanFire':
+		case 'FaceOff':
+		case 'Gunslinger':
+		case 'LightningHands':
+			Template.AbilityShooterConditions.AddItem(CreatePistolWeaponCatCondition());
+			break;
+	}
+
+	// Handle multi-shot abilities
+	UpdateMultiShotAbility(Template);
 }
 
 static function bool OverrideFinalHitChance(X2AbilityToHitCalc AbilityToHitCalc, out ShotBreakdown ShotBreakdown)
@@ -505,35 +566,11 @@ static function UpdateBayonetCharge(X2AbilityTemplate Template)
 	Template.AbilityCooldown = Cooldown;
 }
 
-static function RemoveAbilityTargetEffects(X2AbilityTemplate Template, name EffectName)
-{
-	local int i;
-	for (i = Template.AbilityTargetEffects.Length - 1; i >= 0; i--)
-	{
-		if (Template.AbilityTargetEffects[i].isA(EffectName))
-		{
-			Template.AbilityTargetEffects.Remove(i, 1);
-		}
-	}
-}
-
-static function RemoveAbilityMultiTargetEffects(X2AbilityTemplate Template, name EffectName)
-{
-	local int i;
-	for (i = Template.AbilityMultiTargetEffects.Length - 1; i >= 0; i--)
-	{
-		if (Template.AbilityMultiTargetEffects[i].isA(EffectName))
-		{
-			Template.AbilityMultiTargetEffects.Remove(i, 1);
-		}
-	}
-}
-
 static function ReplaceWithDamageReductionExplosive(X2AbilityTemplate Template)
 {
 	local X2Effect_Formidable	PaddingEffect;
 
-	RemoveAbilityTargetEffects(Template,'X2Effect_BlastShield');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template,'X2Effect_BlastShield');
 
 	PaddingEffect = new class'X2Effect_Formidable';
 	PaddingEffect.ExplosiveDamageReduction = default.EXPLOSIVE_DAMAGE_REDUCTION;
@@ -545,10 +582,11 @@ static function ReplaceWithDamageReductionMelee(X2AbilityTemplate Template)
 {
 	local X2Effect_DefendingMeleeDamageModifier DamageMod;
 
-	RemoveAbilityTargetEffects(Template,'X2Effect_DamageImmunity');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template,'X2Effect_DamageImmunity');
 
 	DamageMod = new class'X2Effect_DefendingMeleeDamageModifier';
 	DamageMod.DamageMod = default.MELEE_DAMAGE_REDUCTION;
+	DamageMod.OnlyForDashingAttacks = true;
 	DamageMod.BuildPersistentEffect(1, true, false, true);
 	DamageMod.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyHelpText(), Template.IconImage,,, Template.AbilitySourceName);
 	Template.AddTargetEffect(DamageMod);
@@ -577,7 +615,8 @@ static function UpdatePurifierFlamethrower(X2AbilityTemplate Template)
 	local X2AbilityMultiTarget_Cone_LWFlamethrower	ConeMultiTarget;
 	local X2AbilityToHitCalc_StandardAim			StandardAim;
 	local X2Condition 								Condition;
-
+	local X2Condition_Phosphorus PhosphorusCondition;
+	local X2Effect Effect;
 	StandardAim = new class'X2AbilityToHitCalc_StandardAim';
 	StandardAim.bAllowCrit = false;
 	StandardAim.bGuaranteedHit = true;
@@ -590,6 +629,15 @@ static function UpdatePurifierFlamethrower(X2AbilityTemplate Template)
 			X2Condition_UnitEffects(Condition).RemoveExcludeEffect(class'X2AbilityTemplateManager'.default.DisorientedName);
 		}
 	}
+		PhosphorusCondition = new class'X2Condition_Phosphorus';
+
+	foreach Template.AbilityMultiTargetEffects(Effect)
+	{
+		if(Effect.isA('X2Effect_ApplyWeaponDamage'))
+		{
+			X2Effect_ApplyWeaponDamage(Effect).TargetConditions.AddItem(PhosphorusCondition);
+		}
+	}	
 
 	Template.TargetingMethod = class'X2TargetingMethod_Cone_Flamethrower_LW';
 
@@ -604,16 +652,17 @@ static function UpdatePurifierFlamethrower(X2AbilityTemplate Template)
 	ConeMultiTarget.bIgnoreBlockingCover = true;
 	Template.AbilityMultiTargetStyle = ConeMultiTarget;
 
+	Template.AdditionalAbilities.AddItem('Phosphorus');
+
 	Template.bCheckCollision = true;
 	Template.bAffectNeighboringTiles = true;
 	Template.bFragileDamageOnly = true;
 
 	// For vanilla targeting
-	// Template.ActionFireClass = class'X2Action_Fire_Flamethrower';
 	Template.PostActivationEvents.AddItem('FlamethrowerActivated');
 	Template.ActionFireClass = class'X2Action_Fire_Flamethrower_LW';
 
-	Template.BuildVisualizationFn = class'X2Ability_LW_TechnicalAbilitySet'.static.LWFlamethrower_BuildVisualization;
+	//Template.BuildVisualizationFn = class'X2Ability_LW_TechnicalAbilitySet'.static.LWFlamethrower_BuildVisualization;
 
 }
 
@@ -630,36 +679,96 @@ static function MakeAbilityNonTurnEnding(X2AbilityTemplate Template)
 	}
 }
 
-static function MakeFreeAction(X2AbilityTemplate Template)
+// Adds an extra unit condition to both Solace and Solace Cleanse that
+// prevents them from affecting robotic units. This also removes Holy
+// Warrior from the list of effects that Solace Cleanse removes.
+static function RemoveRoboticsAsValidTargetsOfSolace(X2AbilityTemplate Template)
 {
-	local X2AbilityCost Cost;
+	local X2Effect_Solace ExistingEffect;
+	local X2Condition_UnitProperty UnitCondition;
+	local int i;
 
-	foreach Template.AbilityCosts(Cost)
+	// Replace the existing Solace effect with our own
+	for (i = 0; i < Template.AbilityMultiTargetEffects.Length; i++)
 	{
-		if (Cost.IsA('X2AbilityCost_ActionPoints'))
+		// Sanity check to make sure that another mod hasn't modified
+		// the effect itself.
+		ExistingEffect = X2Effect_Solace(Template.AbilityMultiTargetEffects[i]);
+		if (ExistingEffect != none && ClassIsChildOf(class'X2Effect_SolaceAura_LW', ExistingEffect.Class))
 		{
-			X2AbilityCost_ActionPoints(Cost).iNumPoints = 1;
-			X2AbilityCost_ActionPoints(Cost).bFreeCost = true;
-			X2AbilityCost_ActionPoints(Cost).bConsumeAllPoints = false;
+			Template.AbilityMultiTargetEffects[i] = new class'X2Effect_SolaceAura_LW'(ExistingEffect);
+		}
+	}
+
+	// Add a target condition that excludes robotic units
+	UnitCondition = new class'X2Condition_UnitProperty';
+	UnitCondition.ExcludeHostileToSource = true;
+	UnitCondition.ExcludeFriendlyToSource = false;
+	UnitCondition.ExcludeRobotic = true;
+
+	Template.AbilityMultiTargetConditions.AddItem(UnitCondition);
+}
+
+// Adds an extra unit condition to both Solace and Solace Cleanse that
+// prevents them from affecting robotic units. This also removes Holy
+// Warrior from the list of effects that Solace Cleanse removes.
+static function RemoveRoboticsAsValidTargetsOfSolaceCleanse(X2AbilityTemplate Template)
+{
+	local X2Effect_RemoveEffects RemoveEffects;
+	local X2Condition_UnitProperty UnitCondition;
+	local int i, j;
+
+	for (i = 0; i < Template.AbilityTargetEffects.Length; i++)
+	{
+		RemoveEffects = X2Effect_RemoveEffects(Template.AbilityTargetEffects[i]);
+		if (RemoveEffects != none)
+		{
+			// Make sure the various Solace effects ignore robotic units.
+			for (j = 0; j < RemoveEffects.TargetConditions.Length; j++)
+			{
+				UnitCondition = X2Condition_UnitProperty(RemoveEffects.TargetConditions[j]);
+				if (UnitCondition != none)
+					UnitCondition.ExcludeRobotic = true;
+			}
+
+			// Solace Cleanse should not clear Holy Warrior. If it's clearing the mind
+			// control from a unit that has Holy Warrior, then MindControlCleanse will
+			// ensure Holy Warrior is correctly removed.
+			RemoveEffects.EffectNamesToRemove.RemoveItem(class'X2Ability_AdvPriest'.default.HolyWarriorEffectName);
 		}
 	}
 }
+
 static function RemoveTheDeathFromHolyWarriorDeath(X2AbilityTemplate Template)
 {
-	RemoveAbilityMultiTargetEffects(Template, 'X2Effect_HolyWarriorDeath');
+	class'Helpers_LW'.static.RemoveAbilityMultiTargetEffects(Template, 'X2Effect_HolyWarriorDeath');
 }
 
 static function UpdateSustainEffect(X2AbilityTemplate Template)
 {
 	local X2Effect_Sustain_LW SustainEffect;
 
-	RemoveAbilityTargetEffects(Template,'X2Effect_Sustain');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template,'X2Effect_Sustain');
 
 	SustainEffect = new class'X2Effect_Sustain_LW';
 	SustainEffect.BuildPersistentEffect(1, true, true);
 	SustainEffect.EffectName='Sustain';
 	SustainEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,, Template.AbilitySourceName);
 	Template.AddTargetEffect(SustainEffect);
+}
+
+static function UseNewDeadeyeEffect(X2AbilityTemplate Template)
+{
+	local X2Effect_DeadeyeDamage_LW DeadeyeEffect;
+
+	// Remove old effect before adding the new one.
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template, 'X2Effect_DeadeyeDamage');
+
+	DeadeyeEffect = new class'X2Effect_DeadeyeDamage_LW';
+	DeadeyeEffect.BuildPersistentEffect(1, true, false, false);
+	DeadeyeEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, false,,Template.AbilitySourceName);
+	DeadeyeEffect.DamageMultiplier = class'X2Effect_DeadeyeDamage'.default.DamageMultiplier;
+	Template.AddTargetEffect(DeadeyeEffect);
 }
 
 static function AllowRevivalProtocolToRemoveStunned(X2AbilityTemplate Template)
@@ -811,6 +920,7 @@ static function ReworkMindScorch(X2AbilityTemplate Template)
 	local X2Effect_Burning BurningEffect;
 	local X2Effect_ApplyWeaponDamage DamageEffect;
 	local array<name> SkipExclusions;
+	local X2Condition_UnitImmunities UnitImmunityCondition;
 
 	ShooterCondition = new class'X2Condition_UnitProperty';
 	ShooterCondition.ExcludeConcealed = true;
@@ -843,8 +953,8 @@ static function ReworkMindScorch(X2AbilityTemplate Template)
 	Template.TargetingMethod = class'X2TargetingMethod_AreaSuppression';
 	Template.AbilityToHitCalc = new class'X2AbilityToHitCalc_DeadEye';
 
-	RemoveAbilityTargetEffects(Template, 'X2Effect_Dazed');
-	RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Dazed');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template, 'X2Effect_Dazed');
+	class'Helpers_LW'.static.RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Dazed');
 
 	BurningEffect = class'X2StatusEffects'.static.CreateBurningStatusEffect(default.MIND_SCORCH_BURNING_BASE_DAMAGE, default.MIND_SCORCH_BURNING_DAMAGE_SPREAD);
 	BurningEffect.ApplyChance = default.MIND_SCORCH_BURN_CHANCE;
@@ -859,6 +969,10 @@ static function ReworkMindScorch(X2AbilityTemplate Template)
 	DamageEffect.TargetConditions.AddItem(TargetCondition);
 	Template.AddTargetEffect(DamageEffect);
 	Template.AddMultiTargetEffect(DamageEffect);
+
+	UnitImmunityCondition = new class'X2Condition_UnitImmunities';
+	UnitImmunityCondition.AddExcludeDamageType('Fire');
+	Template.AbilityTargetConditions.AddItem(UnitImmunityCondition);
 
 	DangerZoneBonus.RequiredAbility = 'MindScorchDangerZone';
 	DangerZoneBonus.fBonusRadius = `TILESTOMETERS(class'X2LWModTemplate_TemplarAbilities'.default.VOLT_DANGER_ZONE_BONUS_RADIUS) + 0.01;
@@ -920,7 +1034,7 @@ static function ReworkPartingSilk(X2AbilityTemplate Template)
 {
 	local X2AbilityCost Cost;
 	local X2Condition Condition;
-	RemoveAbilityTargetEffects(Template, 'X2Effect_Dazed');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template, 'X2Effect_Dazed');
 
 	Template.AbilityToHitCalc = new class'X2AbilityToHitCalc_DeadEye';
 
@@ -975,17 +1089,16 @@ static function BuffTeleportAlly(X2AbilityTemplate Template)
 
 static function UpdateSummon(X2AbilityTemplate Template)
 {
-	//local X2AbilityCooldown					Cooldown;
-
+	local X2AbilityCooldown					Cooldown;
 	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_AlwaysShow;
 
-	//Screw it, I have no idea how to do it cleanly and no other mod touches it anyway
-	//Template.AbilityShooterConditions.Remove(2,1);
-	//RemoveAbilityShooterEffect(Template,'X2Effect_SetUnitValue');
+	class'Helpers_LW'.static.RemoveAbilityShooterEffects(Template,'X2Effect_SetUnitValue');
+	class'Helpers_LW'.static.RemoveAbilityShooterConditions(Template, 'X2Condition_UnitValue');
 
-	//Cooldown = new class'X2AbilityCooldown';
-	//Cooldown.iNumTurns = default.SUMMON_COOLDOWN;
-	//Template.AbilityCooldown = Cooldown;
+
+	Cooldown = new class'X2AbilityCooldown';
+	Cooldown.iNumTurns = default.SUMMON_COOLDOWN;
+	Template.AbilityCooldown = Cooldown;
 
 	Template.BuildNewGameStateFn = class'X2Ability_LW_ChosenAbilities'.static.ChosenSummonFollowers_BuildGameState;
 	Template.BuildVisualizationFn = class'X2Ability_LW_ChosenAbilities'.static.ChosenSummonFollowers_BuildVisualization;
@@ -1021,7 +1134,7 @@ static function UpdateChosenRegenerate(X2AbilityTemplate Template)
 {
 	local X2Effect_RegenerationPCT RegenerationEffect;
 
-	RemoveAbilityTargetEffects(Template, 'X2Effect_Regeneration');
+	class'Helpers_LW'.static.RemoveAbilityTargetEffects(Template, 'X2Effect_Regeneration');
 
 	RegenerationEffect = new class'X2Effect_RegenerationPCT';
 	RegenerationEffect.BuildPersistentEffect(1, true, true, false, eGameRule_PlayerTurnBegin);
@@ -1032,23 +1145,186 @@ static function UpdateChosenRegenerate(X2AbilityTemplate Template)
 
 static function ReworkHarborWave(X2AbilityTemplate Template)
 {
-	local X2Effect_ApplyHarborWaveDamage DamageEffect;
+	local X2Effect_ApplyWeaponDamage DamageEffect;
 
 
 	Template.AbilityToHitCalc = new class'X2AbilityToHitCalc_DeadEye';
 
-	RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Dazed');
-	RemoveAbilityMultiTargetEffects(Template, 'X2Effect_ApplyWeaponDamage');
-	RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Knockback');
+	class'Helpers_LW'.static.RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Dazed');
+	class'Helpers_LW'.static.RemoveAbilityMultiTargetEffects(Template, 'X2Effect_ApplyWeaponDamage');
+	class'Helpers_LW'.static.RemoveAbilityMultiTargetEffects(Template, 'X2Effect_Knockback');
 
-	DamageEffect = new class'X2Effect_ApplyHarborWaveDamage';
+	DamageEffect = new class'X2Effect_ApplyWeaponDamage';
 	DamageEffect.bIgnoreArmor = true;
 	Template.AddMultiTargetEffect(DamageEffect);
 
 	Template.DefaultSourceItemSlot = eInvSlot_SecondaryWeapon;
 }
 
+static function	MakeAbilityWorkWhenBurning(X2AbilityTemplate Template)
+{
+	local array<name>                       SkipExclusions;
+
+	SkipExclusions.AddItem(class'X2StatusEffects'.default.BurningName);
+	Template.AddShooterEffectExclusions(SkipExclusions);
+}
+
+
+static function AddDisablingShotEffect(X2AbilityTemplate Template)
+{
+	local X2Effect_DisableWeapon	DisableWeaponEffect;
+	local X2Condition_AbilityProperty AbilityCondition;
+
+	DisableWeaponEffect = new class'X2Effect_DisableWeapon';
+
+	AbilityCondition = new class'X2Condition_AbilityProperty';
+	AbilityCondition.OwnerHasSoldierAbilities.AddItem('Disabler');
+	DisableWeaponEffect.TargetConditions.AddItem(AbilityCondition);
+
+	Template.AddTargetEffect(DisableWeaponEffect);
+}
+
+static function DisplayMindShieldPassive(X2AbilityTemplate Template)
+{
+	local X2Effect_DamageImmunity  DamageImmunity;
+	local X2Effect TempEffect;
+
+	Template.IconImage = "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_mindshield";
+	foreach Template.AbilityTargetEffects( TempEffect )
+	{
+		if ( X2Effect_DamageImmunity(TempEffect) != none )
+		{
+			DamageImmunity = X2Effect_DamageImmunity(TempEffect);
+			DamageImmunity.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.LocLongDescription, Template.IconImage, true,, Template.AbilitySourceName);
+		}
+	}
+}
+
+static function X2Condition_WeaponCategory CreatePistolWeaponCatCondition()
+{
+	local X2Condition_WeaponCategory WeaponCatCondition;
+
+	WeaponCatCondition = new class'X2Condition_WeaponCategory';
+	WeaponCatCondition.WeaponCats = default.PISTOL_ABILITY_WEAPON_CATS;
+
+	return WeaponCatCondition;
+}
+
+// Patches any multi-shot abilities that are configured in the
+// MULTI_SHOT_ABILITIES config.
+static function UpdateMultiShotAbility(X2AbilityTemplate Template)
+{
+	local MultiShotAbility AbilityData;
+	local name AbilityName;
+	local int i;
+
+	foreach default.MULTI_SHOT_ABILITIES(AbilityData)
+	{
+		if (AbilityData.AbilityName == Template.DataName)
+		{
+			`LWTrace("Patching multi-shot primary ability '" $ AbilityData.AbilityName $ "'");
+			PatchMultiShotFirstShot(Template);
+			return;
+		}
+		else
+		{
+			foreach AbilityData.FollowUpAbilityNames(AbilityName, i)
+			{
+				if (AbilityName == Template.DataName)
+				{
+					if (i == AbilityData.FollowUpAbilityNames.Length - 1)
+					{
+						`LWTrace("Patching multi-shot final-shot ability '" $ AbilityData.AbilityName $ "'");
+						PatchMultiShotFinalShot(Template, AbilityData.AbilityName);
+						return;
+					}
+					else
+					{
+						`LWTrace("Patching multi-shot intermediate ability '" $ AbilityData.AbilityName $ "'");
+						PatchMultiShotIntermediateShot(Template, AbilityData.AbilityName);
+						return;
+					}
+				}
+			}
+		}
+	}
+}
+
+static function PatchMultiShotFirstShot(X2AbilityTemplate Template)
+{
+	local X2Effect_SetUnitValue NewEffect;
+
+	if (!default.USE_LOS_FOR_MULTI_SHOT_ABILITIES)
+	{
+		NewEffect = new class'X2Effect_SetUnitValue';
+		NewEffect.UnitName = GetMultiShotContinueUnitValueName(Template.DataName);
+		NewEffect.NewValueToSet = 1.0f;
+		NewEffect.CleanupType = eCleanup_BeginTurn;
+		NewEffect.bApplyOnMiss = true;
+		Template.AddShooterEffect(NewEffect);
+	}
+}
+
+static function PatchMultiShotIntermediateShot(X2AbilityTemplate Template, name FirstShotName)
+{
+	local X2Condition_UnitValue UnitValueCondition;
+	local name UnitValueName;
+	
+	if (default.USE_LOS_FOR_MULTI_SHOT_ABILITIES)
+	{
+		Template.AbilityTargetConditions.AddItem(default.GameplayVisibilityCondition);
+	}
+	else
+	{
+		UnitValueName = GetMultiShotContinueUnitValueName(FirstShotName);
+
+		// Apply a condition that the first shot must have already been fired.
+		UnitValueCondition = new class'X2Condition_UnitValue';
+		UnitValueCondition.AddCheckValue(UnitValueName, 1.0f);
+		Template.AbilityShooterConditions.AddItem(UnitValueCondition);
+	}
+}
+
+static function PatchMultiShotFinalShot(X2AbilityTemplate Template, name FirstShotName)
+{
+	local X2Condition_UnitValue UnitValueCondition;
+	local X2Effect_ClearUnitValue NewEffect;
+	local name UnitValueName;
+	
+	if (default.USE_LOS_FOR_MULTI_SHOT_ABILITIES)
+	{
+		Template.AbilityTargetConditions.AddItem(default.GameplayVisibilityCondition);
+	}
+	else
+	{
+		UnitValueName = GetMultiShotContinueUnitValueName(FirstShotName);
+
+		// Apply a condition that the first shot must have already been fired.
+		UnitValueCondition = new class'X2Condition_UnitValue';
+		UnitValueCondition.AddCheckValue(UnitValueName, 1.0f);
+		Template.AbilityShooterConditions.AddItem(UnitValueCondition);
+
+		// Make sure the unit value is cleared so the follow up shots are no
+		// longer available.
+		NewEffect = new class'X2Effect_ClearUnitValue';
+		NewEffect.UnitValueName = UnitValueName;
+		NewEffect.bApplyOnMiss = true;
+		Template.AddShooterEffect(NewEffect);
+	}
+}
+
+static function name GetMultiShotContinueUnitValueName(name AbilityName)
+{
+	return name(AbilityName $ "Continue");
+}
+
 defaultproperties
 {
 	AbilityTemplateModFn=UpdateAbilities
+
+	Begin Object Class=X2Condition_Visibility Name=DefaultGameplayVisibilityCondition
+		bRequireGameplayVisible=true
+		bRequireBasicVisibility=true
+	End Object
+	GameplayVisibilityCondition = DefaultGameplayVisibilityCondition;
 }

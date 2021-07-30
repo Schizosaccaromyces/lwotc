@@ -109,11 +109,29 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 	case 'CHARGE_BATTERY_CHARGES':
 		OutString = string(class'X2Ability_ReaperAbilitySet_LW'.default.CHARGE_BATTERY_CHARGES);
 		return true;
+	case 'RemoteStartCharges':
+		OutString = string(class'X2LWModTemplate_ReaperAbilities'.default.REMOTE_START_CHARGES);
+		return true;
 	case 'DemolitionistExtraChargeCount':
 		OutString = string(class'X2LWModTemplate_ReaperAbilities'.default.REMOTE_START_DEMOLITIONIST_CHARGES);
 		return true;
 	case 'DisablingShotStunActions':
 		OutString = string(class'X2Ability_ReaperAbilitySet_LW'.default.DisablingShotBaseStunActions);
+		return true;
+	case 'PARAMEDIC_BONUS_CHARGES':
+		OutString = string(class'X2Ability_ReaperAbilitySet_LW'.default.PARAMEDIC_BONUS_CHARGES);
+		return true;
+	case 'PARAMEDIC_BONUS_HEAL':
+		OutString = string(class'X2Ability_ReaperAbilitySet_LW'.default.PARAMEDIC_BONUS_HEAL);
+		return true;
+	case 'REND_THE_MARKED_CRIT':
+		OutString = string(class'X2Ability_ThrowingKnifeAbilitySet'.default.REND_THE_MARKED_CRIT);
+		return true;
+	case 'IMPERSONAL_EDGE_AIM':
+		OutString = string(class'X2Ability_ThrowingKnifeAbilitySet'.default.IMPERSONAL_EDGE_AIM);
+		return true;
+	case 'BLUESCREEN_KNIVES_PIERCE':
+		OutString = string(class'X2Ability_ThrowingKnifeAbilitySet'.default.BLUESCREEN_KNIVES_PIERCE);
 		return true;
 	case 'DisablingShotCritStunActions':
 		OutString = string(class'X2Ability_ReaperAbilitySet_LW'.default.DisablingShotCritStunActions);
@@ -144,10 +162,10 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 		OutString = string(class'X2Ability_TemplarAbilitySet_LW'.default.MEDITATION_FOCUS_RECOVERY);
 		return true;
 	case 'OverchargeAimBonus':
-		OutString = string(class'X2Ability_TemplarAbilitySet_LW'.default.FOCUS1AIM);
+		OutString = string(class'X2Ability_TemplarAbilitySet_LW'.default.OVERCHARGE_AIM_BONUS);
 		return true;
-	case 'OverchargeDefenseBonus':
-		OutString = string(class'X2Ability_TemplarAbilitySet_LW'.default.FOCUS1DEFENSE);
+	case 'OverchargeCritBonus':
+		OutString = string(class'X2Ability_TemplarAbilitySet_LW'.default.OVERCHARGE_CRIT_BONUS);
 		return true;
 	case 'VoltDangerZoneBonus':
 		OutString = string(class'X2LWModTemplate_TemplarAbilities'.default.VOLT_DANGER_ZONE_BONUS_RADIUS);
@@ -161,7 +179,68 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 	case 'ApotheosisDamageMultiplier':
 		OutString = string(int(class'X2Ability_TemplarAbilitySet_LW'.default.APOTHEOSIS_DAMAGE_MULTIPLIER * 100));
 		return true;
+	case 'DEATH_DEALER_CRIT':
+		OutString = string(class'X2LWModTemplate_ReaperAbilities'.default.DEATH_DEALER_CRIT);
+		return true;
+	case 'BANISH_HIT_MOD':
+		OutString = string(class'X2Effect_BanishHitMod'.default.BANISH_HIT_MOD * -1);
+		return true;
+	case 'GREATER_PADDING_CV':
+		OutString = string(class'X2Ability_ShieldAbilitySet'.default.GREATER_PADDING_CV);
+		return true;
+	case 'GREATER_PADDING_MG':
+		OutString = string(class'X2Ability_ShieldAbilitySet'.default.GREATER_PADDING_MG);
+		return true;
+	case 'GREATER_PADDING_BM':
+		OutString = string(class'X2Ability_ShieldAbilitySet'.default.GREATER_PADDING_BM);
+		return true;
+	case 'OVERRIDE_REDUCTION':
+		OutString = string(class'X2Effect_ManualOverride_LW'.default.OVERRIDE_REDUCTION);
+		return true;
+	case 'REFLEX_CRIT_DEF':
+		OutString = string(class'X2LWModTemplate_SkirmisherAbilities'.default.REFLEX_CRIT_DEF);
+		return true;
+	case 'BATTLEFIELD_AWARENESS_COOLDOWN':
+		OutString = string(class'X2Ability_SkirmisherAbilitySet_LW'.default.BATTLEFIELD_AWARENESS_COOLDOWN);
+		return true;
 	}
 
 	return false;
+}
+
+static function bool AbilityTagExpandHandler_CH(string InString, out string OutString, Object ParseObj, Object StrategyParseOb, XComGameState GameState)
+{
+	local name Type;
+	local XComGameState_Ability AbilityState;
+	local X2AbilityTemplate AbilityTemplate;
+	local X2Effect_CloseEncounters CEEffect;
+	local int i;
+
+	Type = name(InString);
+	switch(Type)
+	{
+	case 'CLOSE_ENCOUNTERS_RANGE':
+		AbilityTemplate = X2AbilityTemplate(ParseObj);
+		if (AbilityTemplate == none)
+		{
+			AbilityState = XComGameState_Ability(ParseObj);
+			if (AbilityState != none)
+				AbilityTemplate = AbilityState.GetMyTemplate();
+		}
+		if (AbilityTemplate != none)
+		{
+			for (i = 0; i < AbilityTemplate.AbilityTargetEffects.Length; i++)
+			{
+				CEEffect = X2Effect_CloseEncounters(AbilityTemplate.AbilityTargetEffects[i]);
+				if (CEEffect != none)
+				{
+					OutString = string(CEEffect.MaxTiles);
+					return true;
+				}
+			}
+		}
+		return false;
+	default:
+		return false;
+	}
 }

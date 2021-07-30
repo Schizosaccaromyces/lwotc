@@ -309,7 +309,7 @@ static function X2AbilityTemplate CreatePhosphorusBonusAbility()
 	PhosphorusEffect = new class'X2Effect_Phosphorus';
 	PhosphorusEffect.BuildPersistentEffect (1, true, false);
 	PhosphorusEffect.bDisplayInUI = false;
-	PhosphorusEffect.BonusShred = default.PHOSPHORUS_BONUS_SHRED;
+	//PhosphorusEffect.BonusShred = default.PHOSPHORUS_BONUS_SHRED;
 	Template.AddTargetEffect(PhosphorusEffect);
 
 	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
@@ -838,7 +838,7 @@ static function X2DataTemplate CreateNapalmXPanicEffectAbility()
 static function X2AbilityTemplate CreateFireandSteelAbility()
 {
 	local X2AbilityTemplate                 Template;
-	local X2Effect_BonusWeaponDamage		DamageEffect;
+	local X2Effect_BonusWeaponDOT			DamageEffect;
 
 	`CREATE_X2ABILITY_TEMPLATE(Template, 'FireandSteel');
 	Template.IconImage = "img:///UILibrary_LW_Overhaul.LW_AbilityFireandSteel";
@@ -849,8 +849,10 @@ static function X2AbilityTemplate CreateFireandSteelAbility()
 	Template.AbilityTargetStyle = default.SelfTarget;
 	Template.AbilityTriggers.AddItem(default.UnitPostBeginPlayTrigger);
 	Template.bIsPassive = true;
-	DamageEffect = new class'X2Effect_BonusWeaponDamage';
+	DamageEffect = new class'X2Effect_BonusWeaponDOT';
 	DamageEffect.BonusDmg = default.FIRE_AND_STEEL_DAMAGE_BONUS;
+	// Apply to burning tick effects like the description says it should
+	DamageEffect.ApplyToNonBaseDamage = true;
 	DamageEffect.BuildPersistentEffect(1, true, false, false);
 	DamageEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,,Template.AbilitySourceName);
 	Template.AddTargetEffect(DamageEffect);
@@ -1182,7 +1184,7 @@ static function X2AbilityTemplate CreateConcussionRocketAbility()
 	//Template.AddTargetEffect(StunnedEffect);
 	Template.AddMultiTargetEffect(StunnedEffect);
 
-	DisorientedEffect = class'X2StatusEffects'.static.CreateDisorientedStatusEffect();
+	DisorientedEffect = class'X2StatusEffects'.static.CreateDisorientedStatusEffect(, , false);
 	DisorientedEffect.ApplyChanceFn = ApplyChance_Concussion_Disoriented;
 	//Template.AddTargetEffect(DisorientedEffect);
 	Template.AddMultiTargetEffect(DisorientedEffect);

@@ -21,6 +21,13 @@ var config int PALE_HORSE_MAX_CRIT;
 
 var config int STING_RUPTURE;
 
+var config int BANISH_COOLDOWN;
+var const name BanishFiredTimes;
+
+var config int DEATH_DEALER_CRIT;
+
+var localized string ShadowExpiredFlyover;
+
 static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 {
 	switch (Template.DataName)
@@ -39,7 +46,11 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 		ConvertRemoteStartToCharges(Template);
 		break;
 	case 'HomingMine':
-		AddDemolitionistToHomingMine(Template);
+		Template.AdditionalAbilities.AddItem('Shrapnel');
+		break;
+	case 'Shrapnel':
+		// Prevent Homing Mines granting Claymore charges.
+		Template.AdditionalAbilities.RemoveItem('ThrowShrapnel');
 		break;
 	case 'PaleHorse':
 		UpdateEffectForPaleHorse(Template);
@@ -53,11 +64,10 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 	{
 		switch (Template.DataName)
 		{
-		case 'ShadowPassive':
-			RemoveShadowStayConcealedEffect(Template);
-			break;
 		case 'Shadow':
 			MakeShadowTemporary(Template);
+			Template.AdditionalAbilities.RemoveItem('ShadowPassive');
+			Template.AdditionalAbilities.AddItem('Infiltration');
 			break;
 		case 'Sting':
 			UpdateStingForNewShadow(Template);
@@ -68,30 +78,12 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 		case 'ShadowRising':
 			UpdateShadowRisingForNewShadow(Template);
 			break;
-		}
-	}
-}
-
-static function RemoveShadowStayConcealedEffect(X2AbilityTemplate Template)
-{
-	local X2Effect_PersistentStatChange StatChangeEffect;
-	local int i;
-
-	for (i = Template.AbilityTargetEffects.Length - 1; i >= 0 ; i--)
-	{
-		if (Template.AbilityTargetEffects[i].IsA('X2Effect_StayConcealed'))
-		{
-			Template.AbilityTargetEffects.Remove(i, 1);
-			continue;
-		}
-
-		// Disable the EffectRemoved function that resets Shadow's cooldown when
-		// concealment is lost.
-		StatChangeEffect = X2Effect_PersistentStatChange(Template.AbilityTargetEffects[i]);
-		if (StatChangeEffect != none)
-		{
-			StatChangeEffect.EffectRemovedFn = none;
-			continue;
+		case 'SoulReaper':
+			UpdateBanish(Template);
+			break;
+		case 'SoulReaperContinue':
+			UpdateBanish2(Template);
+			break;
 		}
 	}
 }
@@ -99,8 +91,10 @@ static function RemoveShadowStayConcealedEffect(X2AbilityTemplate Template)
 static function MakeShadowTemporary(X2AbilityTemplate Template)
 {
 	local X2Effect_Shadow ShadowEffect;
+	local X2Effect_StayConcealed StayConcealedEffect;
 	local X2AbilityCost_ActionPoints ActionPointCost;
 	local X2AbilityCooldown Cooldown;
+	local X2Condition_UnitProperty SuperConcealedCondition;
 	local int i;
 
 	// Kill the charges and the charge cost
@@ -131,6 +125,24 @@ static function MakeShadowTemporary(X2AbilityTemplate Template)
 		}
 	}
 
+	// Remove the Stealth condition that forbids use of Shadow from ordinary
+	// concealment and when flanked.
+	class'Helpers_LW'.static.RemoveAbilityShooterConditions(Template, 'X2Condition_Stealth');
+
+	// Replace it with one that only requires that the unit is not concealed.
+	SuperConcealedCondition = new class'X2Condition_UnitProperty';
+	SuperConcealedCondition.IsConcealed = false;
+	SuperConcealedCondition.ExcludeConcealed = true;
+	SuperConcealedCondition.IsSuperConcealed = false;
+	Template.AbilityShooterConditions.AddItem(SuperConcealedCondition);
+
+	// While Shadow is active, the Reaper should not lose concealment if
+	// squad concealment breaks.
+	StayConcealedEffect = new class'X2Effect_StayConcealed';
+	StayConcealedEffect.EffectName = 'ShadowIndividualConcealment';
+	StayConcealedEffect.BuildPersistentEffect(1, true, false);
+	Template.AddTargetEffect(StayConcealedEffect);
+
 	Template.AddTargetEffect(CreateTemporaryShadowEffect());
 	Template.AdditionalAbilities.AddItem('RemoveShadowOnConcealmentLostTrigger');
 }
@@ -148,6 +160,7 @@ static function X2Effect_PersistentStatChange CreateTemporaryShadowEffect()
 	StealthyEffect.DuplicateResponse = eDupe_Refresh;
 	StealthyEffect.EffectAddedFn = EnterSuperConcealment;
 	StealthyEffect.EffectRemovedFn = ShadowExpired;
+	StealthyEffect.EffectRemovedVisualizationFn = VisualizeShadowExpired;
 
 	return StealthyEffect;
 }
@@ -158,7 +171,7 @@ static function EnterSuperConcealment(X2Effect_Persistent PersistentEffect, cons
 	local XComGameState_Ability ShadowAbility;
 	local StateObjectReference ShadowRef;
 
-	UnitState = XComGameState_Unit(kNewTargetState);
+	UnitState = XComGameState_Unit(NewGameState.ModifyStateObject(class'XComGameState_Unit', kNewTargetState.ObjectID));
 	UnitState.bHasSuperConcealment = true;
 
 	// Copied with some modifications from X2Ability_ReaperAbilitySet.ShadowEffectRemoved()
@@ -195,8 +208,26 @@ static function ShadowExpired(
 	local XComGameState_Unit UnitState;
 
 	UnitState = XComGameState_Unit(NewGameState.ModifyStateObject(class'XComGameState_Unit', ApplyEffectParameters.TargetStateObjectRef.ObjectID));
+	UnitState.bHasSuperConcealment = false;
+
 	`XEVENTMGR.TriggerEvent('ShadowExpired', UnitState, UnitState, NewGameState);
 	`XEVENTMGR.TriggerEvent('EffectBreakUnitConcealment', UnitState, UnitState, NewGameState);
+}
+
+static function VisualizeShadowExpired(
+	XComGameState VisualizeGameState,
+	out VisualizationActionMetadata ActionMetadata,
+	const name EffectApplyResult)
+{
+	local X2Action_PlaySoundAndFlyOver SoundAndFlyOver;
+	local XComGameState_Unit UnitState;
+
+	UnitState = XComGameState_Unit(ActionMetadata.StateObject_NewState);
+	if (UnitState == none)
+		return;
+
+	SoundAndFlyOver = X2Action_PlaySoundAndFlyOver(class'X2Action_PlaySoundAndFlyOver'.static.AddToVisualizationTree(ActionMetadata, VisualizeGameState.GetContext(), false, ActionMetadata.LastActionAdded));
+	SoundAndFlyOver.SetSoundAndFlyOverParameters(none, default.ShadowExpiredFlyover, '', eColor_Bad);
 }
 
 // Use a custom cursor targeting for Claymores so we can add Bombardier
@@ -275,11 +306,6 @@ static function ConvertRemoteStartToCharges(X2AbilityTemplate Template)
 	Template.AbilityCharges = Charges;
 }
 
-static function AddDemolitionistToHomingMine(X2AbilityTemplate Template)
-{
-	Template.AbilityCharges.AddBonusCharge('Demolitionist', default.REMOTE_START_DEMOLITIONIST_CHARGES);
-}
-
 // Add holo + rupture to Sting
 static function UpdateStingForNewShadow(X2AbilityTemplate Template)
 {
@@ -324,7 +350,7 @@ static function UpdateSilentKillerForNewShadow(X2AbilityTemplate Template)
 	local int i;
 
 	// Silent Killer has a chance to increase the duration of Shadow by one turn
-	Template.AdditionalAbilities.AddItem('SilentKillerDurationExtension');
+	//Template.AdditionalAbilities.AddItem('SilentKillerDurationExtension');
 
 	// Disable the EffectRemoved function that resets Shadow's cooldown when
 	// concealment is lost.
@@ -373,6 +399,13 @@ static function ReplaceDeathDealerEffect(X2AbilityTemplate Template)
 {
 	local X2Effect_Executioner ExecutionerEffect;
 	local int i;
+	local X2Effect_ToHitModifier ToHitModifier;
+
+	ToHitModifier = new class'X2Effect_ToHitModifier';
+	ToHitModifier.BuildPersistentEffect(1, true, true, true);
+	ToHitModifier.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, false,,Template.AbilitySourceName);
+	ToHitModifier.AddEffectHitModifier(eHit_Crit, default.DEATH_DEALER_CRIT, Template.LocFriendlyName);
+	Template.AddTargetEffect(ToHitModifier);
 
 	// Remove the previous Pale Horse effect
 	for (i = Template.AbilityTargetEffects.Length - 1; i >= 0 ; i--)
@@ -386,7 +419,60 @@ static function ReplaceDeathDealerEffect(X2AbilityTemplate Template)
 	}
 }
 
+static function UpdateBanish(X2AbilityTemplate Template)
+{
+	local X2AbilityCost Cost;
+	local X2AbilityCooldown Cooldown;
+
+
+	ChangeBanishHitCalc(Template);
+
+
+	foreach Template.AbilityCosts(Cost)
+	{
+		if (Cost.isA('X2AbilityCost_Charges'))
+		{
+			Template.AbilityCosts.RemoveItem(Cost);
+			break;
+		}
+	}
+
+	Template.AbilityCharges = none;
+
+	Cooldown = new class'X2AbilityCooldown';
+	Cooldown.iNumTurns = default.BANISH_COOLDOWN;
+	Template.AbilityCooldown = Cooldown;
+}
+
+static function UpdateBanish2(X2AbilityTemplate Template)
+{
+	local X2Effect_BanishHitMod HitMod;
+
+	ChangeBanishHitCalc(Template);
+
+	HitMod = new class'X2Effect_BanishHitMod';
+	HitMod.BuildPersistentEffect (1, true, true);
+	Template.AddShooterEffect(HitMod);
+}
+
+
+static function ChangeBanishHitCalc(X2AbilityTemplate Template)
+{
+	local X2Effect_SetUnitValue BanishCount;
+
+	X2AbilityToHitCalc_StandardAim(Template.AbilityToHitCalc).bAllowCrit = true;
+
+	BanishCount = new class'X2Effect_IncrementUnitValue';
+	BanishCount.UnitName = default.BanishFiredTimes;
+	BanishCount.NewValueToSet = 1;
+	BanishCount.CleanupType = eCleanup_BeginTurn;
+	BanishCount.bApplyOnHit = true;
+	BanishCount.bApplyOnMiss = true;
+	Template.AddShooterEffect(BanishCount);
+}
+	
 defaultproperties
 {
 	AbilityTemplateModFn=UpdateAbilities
+	BanishFiredTimes = "BanishFiredTimes"
 }

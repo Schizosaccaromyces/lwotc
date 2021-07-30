@@ -83,3 +83,75 @@ LocHelpText="Расходует заряд, чтобы увеличить вре
 LocLongDescription="Расходует заряд, чтобы увеличить время в Тени на 1 ход.."
 LocPromotionPopupText="<Bullet/>Позволяет находится в Тени на 1 ход больше.<br/><Bullet/> Может быть использовано только из Тени.<br/>"
 ; End Translated
+
+
+; LWOTC Translated
+[SilentKillerDurationExtension X2AbilityTemplate]
+LocFriendlyName="Бесшумынй убийца сохраняет Тень при убийстве, есть 25% шанс добавить тени +1 ход"
+LocFlyoverText="Тень: +1 ход"
+; End Translated
+
+; LWOTC Needs Translation
+[Parkour_LW X2AbilityTemplate]
+LocFriendlyName="Паркур"
+LocHelpText="Перезарядка способности Крюк у Застпника уменьшена на 1 ход."
+LocLongDescription="Перезарядка способности Крюк у Застпника уменьшена на 1 ход."
+LocPromotionPopupText="<Bullet/> Повышает тактическую маневренность Заступика.<br/>"
+; End Translated
+
+
+
+; LWOTC Translated
+[RendTheMarked X2AbilityTemplate]
+LocFriendlyName="Карающие ножи"
+LocHelpText="Бросок ножа накладывает на цель суммирующийся бонус +<Ability:REND_THE_MARKED_CRIT/> крит шанса по цели из всех источников на этом ходу."
+LocLongDescription="Бросок ножа накладывает на цель суммирующийся бонус +<Ability:REND_THE_MARKED_CRIT/> крит шанса по цели из всех источников на этом ходу."
+LocPromotionPopupText="Бросок ножа накладывает на цель суммирующийся бонус +<Ability:REND_THE_MARKED_CRIT/> крит шанса по цели из всех источников на этом ходу."
+
+[KnifeEncounters X2AbilityTemplate]
+LocFriendlyName="Близкие ножи"
+LocFlyOverText="Близкие ножи"
+LocLongDescription="Один раз за ход получите бонус 1 действие если атаковали цель ножом в радиусе within <Ability:CLOSE_ENCOUNTERS_RANGE/> клеток."
+LocHelpText="Один раз за ход получите бонус 1 действие если атаковали цель ножом в радиусе within <Ability:CLOSE_ENCOUNTERS_RANGE/> клеток."
+LocPromotionPopupText="<Bullet/> Один раз за ход получите бонус 1 действие если атаковали цель ножом в радиусе within <Ability:CLOSE_ENCOUNTERS_RANGE/> клеток.<br/><Bullet/> Красный круг показывает границу способности.<br/><Bullet/> Близкие ножи не работают со способностью Стрельба на бегу.<br/>"
+
+[ImpersonalEdge X2AbilityTemplate]
+LocFriendlyName="Ничего личного"
+LocFlyOverText="Ничего личного"
+LocLongDescription="Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом."
+LocHelpText="Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом."
+LocPromotionPopupText="<Bullet/> "Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом.<br/>"
+
+[ImpersonalEdgePassive X2AbilityTemplate]
+LocFriendlyName="Ничего личного"
+LocFlyOverText="Ничего личного"
+LocLongDescription="Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом."
+LocHelpText="Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом."
+LocPromotionPopupText="<Bullet/> "Уменьшает перезарядку "Тени" на 1 и дает бонус к +<Ability:IMPERSONAL_EDGE_AIM/> точности на 3 хода за каждое убийство ножом.<br/>"
+
+[BlueScreenKnives X2AbilityTemplate]
+LocFriendlyName="Ножи Синий Экран"
+LocHelpText="Бросок ножей пробивает +<Ability:BLUESCREEN_KNIVES_PIERCE/> брони и дезориентирует роботов."
+LocLongDescription="Бросок ножей пробивает +<Ability:BLUESCREEN_KNIVES_PIERCE/> брони и дезориентирует роботов."
+LocPromotionPopupText="Бросок ножей пробивает +<Ability:BLUESCREEN_KNIVES_PIERCE/> брони и дезориентирует роботов."
+
+[BattlefieldAwareness X2AbilityTemplate]
+LocFriendlyName="Защита"
+LocLongDescription="После убийства на своём ходу получите гарантированный промах по вам на ходе противников. После использования наступает перезарядка <Ability:BATTLEFIELD_AWARENESS_COOLDOWN/> ходов."
+LocHelpText="После убийства на своём ходу получите гарантированный промах по вам на ходе противников. После использования наступает перезарядка <Ability:BATTLEFIELD_AWARENESS_COOLDOWN/> ходов."
+LocFlyOverText="Защита"
+LocPromotionPopupText="<Bullet/> Способность также действует и на атаки по площади.<br/>"
+
+
+[BattlefieldAwarenessPassive X2AbilityTemplate]
+LocFriendlyName="Защита"
+LocLongDescription="После убийства на своём ходу получите гарантированный промах по вам на ходе противников. После использования наступает перезарядка <Ability:BATTLEFIELD_AWARENESS_COOLDOWN/> ходов."
+LocHelpText="После убийства на своём ходу получите гарантированный промах по вам на ходе противников. После использования наступает перезарядка <Ability:BATTLEFIELD_AWARENESS_COOLDOWN/> ходов."
+LocFlyOverText="Защита"
+
+[BattlefieldAwarenessCooldown X2AbilityTemplate]
+LocFriendlyName="Перезарядка Защиты"
+LocLongDescription="Во время этого эффекта Защита не будет активна."
+LocHelpText="Защита перезаряжается и не будет активирована."
+
+; End Translated

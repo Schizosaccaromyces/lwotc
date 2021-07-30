@@ -5,7 +5,6 @@
 //---------------------------------------------------------------------------------------
 class X2LWModTemplate_SkirmisherAbilities extends X2LWTemplateModTemplate config(LW_FactionBalance);
 
-var config int SKIRMISHER_INTERRUPT_COOLDOWN;
 var config int JUSTICE_COOLDOWN;
 var config int JUSTICE_IENVIRONMENT_DAMAGE;
 var config int WRATH_COOLDOWN;	
@@ -14,6 +13,8 @@ var config int WHIPLASH_ACTION_POINT_COST;
 var config int FULL_THROTTLE_DURATION;
 var config int BATTLELORD_ACTION_POINT_COST;
 var config int BATTLELORD_COOLDOWN;
+var config int COMBAT_PRESENCE_COOLDOWN;
+var config int REFLEX_CRIT_DEF;
 
 static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 {
@@ -21,6 +22,7 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 	{
 	case 'SkirmisherReflex':
 		Template.AdditionalAbilities.AddItem('SkirmisherReflexTrigger');
+		UpdateReflex(Template);
 		break;
 	case 'JudgmentTrigger':
 		ModifyJudgementPanicChanceFunction(Template);
@@ -30,9 +32,6 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 		break;
 	case 'Whiplash':
 		ModifyWhiplash(Template);
-		break;
-	case 'SkirmisherInterruptInput':
-		AddCooldownToInterrupt(Template);
 		break;
 	case 'SkirmisherGrapple':
 		AddParkourSupportToGrapple(Template);
@@ -47,6 +46,12 @@ static function UpdateAbilities(X2AbilityTemplate Template, int Difficulty)
 		break;
 	case 'Battlelord':
 		AddCooldownToBattlelord(Template);
+		break;
+	case 'TotalCombat':
+		UpdateTotalCombat(Template);
+		break;
+	case 'CombatPresence':
+		UpdateCombatPresence(Template);
 		break;
 	}
 }
@@ -232,30 +237,6 @@ static function ModifyWhiplash(X2AbilityTemplate Template)
 	Template.AddTargetEffect(WeaponDamageEffect);
 }
 
-static function AddCooldownToInterrupt(X2AbilityTemplate Template)
-{
-	local X2AbilityCost_ActionPoints	ActionPointCost;
-	local X2AbilityCooldown				Cooldown;
-
-	// Kill the charges and the charge cost
-	Template.AbilityCosts.Length = 0;
-	Template.AbilityCharges = none;
-
-	// Killing the above results in some collateral damage so we have to re-add the action point costs
-	ActionPointCost = new class'X2AbilityCost_ActionPoints';
-	ActionPointCost.iNumPoints = 0;
-	ActionPointCost.bFreeCost = true;
-	ActionPointCost.DoNotConsumeAllEffects.Length = 0;
-	ActionPointCost.DoNotConsumeAllSoldierAbilities.Length = 0;
-	ActionPointCost.AllowedTypes.RemoveItem(class'X2CharacterTemplateManager'.default.SkirmisherInterruptActionPoint);
-	Template.AbilityCosts.AddItem(ActionPointCost);
-
-	// And finally we take the cooldowns from our config file and apply them here
-	Cooldown = new class'X2AbilityCooldown';
-	Cooldown.iNumTurns = default.SKIRMISHER_INTERRUPT_COOLDOWN;
-	Template.AbilityCooldown = Cooldown;
-}
-
 static function AddParkourSupportToGrapple(X2AbilityTemplate Template)
 {
 	local X2AbilityCooldown_Grapple Cooldown;
@@ -309,6 +290,33 @@ static function AddCooldownToBattlelord(X2AbilityTemplate Template)
 	Cooldown.iNumTurns = default.BATTLELORD_COOLDOWN;
 	Template.AbilityCooldown = Cooldown;
 }
+
+static function UpdateTotalCombat(X2AbilityTemplate Template)
+{
+	Template.AdditionalAbilities.AddItem('Bombard_LW');
+	Template.AdditionalAbilities.AddItem('VolatileMix');
+}
+
+static function UpdateCombatPresence(X2AbilityTemplate Template)
+{
+	local X2AbilityCooldown	Cooldown;
+
+	Cooldown = new class'X2AbilityCooldown';
+	Cooldown.iNumTurns = default.COMBAT_PRESENCE_COOLDOWN;
+	Template.AbilityCooldown = Cooldown;
+}
+
+
+static function UpdateReflex(X2AbilityTemplate Template)
+{
+	local X2Effect_Resilience	CritDefEffect;
+
+	CritDefEffect = new class'X2Effect_Resilience';
+	CritDefEffect.CritDef_Bonus = default.REFLEX_CRIT_DEF;
+	CritDefEffect.BuildPersistentEffect (1, true, false, false);
+	Template.AddTargetEffect(CritDefEffect);
+}
+
 
 defaultproperties
 {

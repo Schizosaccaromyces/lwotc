@@ -14,19 +14,14 @@ var config float BONUS_REND_DAMAGE_PER_TILE;
 var config int MAX_REND_FLECHE_DAMAGE;
 var config int VIGILANCE_MIN_POD_SIZE;
 var config int TERROR_STAT_CHECK_BASE_VALUE;
+var config int OVERCHARGE_AIM_BONUS;
+var config int OVERCHARGE_CRIT_BONUS;
 var config int APOTHEOSIS_COOLDOWN;
 var config int APOTHEOSIS_DODGE_BONUS;
 var config int APOTHEOSIS_MOBILITY_BONUS;
 var config float APOTHEOSIS_DAMAGE_MULTIPLIER;
 
-var config int FOCUS1AIM;
-var config int FOCUS1DEFENSE;
-var config int FOCUS2AIM;
-var config int FOCUS2DEFENSE;
-var config int FOCUS3AIM;
-var config int FOCUS3DEFENSE;
-var config int FOCUS4AIM;
-var config int FOCUS4DEFENSE;
+var config int AMPLIFY_SHOTS;
 
 var name PanicImpairingAbilityName;
 
@@ -48,6 +43,11 @@ static function array<X2DataTemplate> CreateTemplates()
 	Templates.AddItem(AddTemplarTerror());
 	Templates.AddItem(AddTerrorPanicAbility());
 	Templates.AddItem(AddApotheosis());
+	Templates.AddItem(Indomitable());
+	Templates.AddItem(AddVoltFocusOnKills());
+	Templates.AddItem(VoltFocusKillTracker());
+	Templates.AddItem(DoubleRendFocus());
+	Templates.AddItem(DoubleRendFocusPassive());
 
 	return Templates;
 }
@@ -256,9 +256,7 @@ static function X2AbilityTemplate AddMeditation()
 static function X2AbilityTemplate AddOvercharge_LW()
 {
 	local X2AbilityTemplate					Template;
-	local X2Effect_TemplarFocusStatBonuses	FocusEffect;
-	local array<StatChange>					StatChanges;
-	local StatChange						NewStatChange;
+	local X2Effect_Overcharge_LW			OverchargeEffect;
 
 	`CREATE_X2ABILITY_TEMPLATE(Template, 'Overcharge_LW');
 	Template.IconImage = "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_Overcharge";
@@ -272,51 +270,12 @@ static function X2AbilityTemplate AddOvercharge_LW()
 	Template.AbilityTargetStyle = default.SelfTarget;
 	Template.AbilityTriggers.AddItem(default.UnitPostBeginPlayTrigger);
 
-	FocusEffect = new class'X2Effect_TemplarFocusStatBonuses';
-	FocusEffect.BuildPersistentEffect(1, true, false);
-	FocusEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.LocLongDescription, Template.IconImage, false, , Template.AbilitySourceName);
-
-	//	focus 0
-	StatChanges.Length = 0;
-	FocusEffect.AddNextFocusLevel(StatChanges, 0, 0);
-	//	focus 1
-	StatChanges.Length = 0;
-	NewStatChange.StatType = eStat_Offense;
-	NewStatChange.StatAmount = default.FOCUS1AIM;
-	StatChanges.AddItem(NewStatChange);
-	NewStatChange.StatType = eStat_Defense;
-	NewStatChange.StatAmount = default.FOCUS1DEFENSE;
-	StatChanges.AddItem(NewStatChange);
-	FocusEffect.AddNextFocusLevel(StatChanges, 0, 0);
-	//	focus 2
-	StatChanges.Length = 0;
-	NewStatChange.StatType = eStat_Offense;
-	NewStatChange.StatAmount = default.FOCUS2AIM;
-	StatChanges.AddItem(NewStatChange);
-	NewStatChange.StatType = eStat_Defense;
-	NewStatChange.StatAmount = default.FOCUS2DEFENSE;
-	StatChanges.AddItem(NewStatChange);
-	FocusEffect.AddNextFocusLevel(StatChanges, 0, 0);
-	//	focus 3
-	StatChanges.Length = 0;
-	NewStatChange.StatType = eStat_Offense;
-	NewStatChange.StatAmount = default.FOCUS3AIM;
-	StatChanges.AddItem(NewStatChange);
-	NewStatChange.StatType = eStat_Defense;
-	NewStatChange.StatAmount = default.FOCUS3DEFENSE;
-	StatChanges.AddItem(NewStatChange);
-	FocusEffect.AddNextFocusLevel(StatChanges, 0, 0);
-	//	focus 3
-	StatChanges.Length = 0;
-	NewStatChange.StatType = eStat_Offense;
-	NewStatChange.StatAmount = default.FOCUS4AIM;
-	StatChanges.AddItem(NewStatChange);
-	NewStatChange.StatType = eStat_Defense;
-	NewStatChange.StatAmount = default.FOCUS4DEFENSE;
-	StatChanges.AddItem(NewStatChange);
-	FocusEffect.AddNextFocusLevel(StatChanges, 0, 0);
-
-	Template.AddTargetEffect(FocusEffect);
+	OverchargeEffect = new class'X2Effect_Overcharge_LW';
+	OverchargeEffect.BuildPersistentEffect(1, true, false);
+	OverchargeEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.LocLongDescription, Template.IconImage, false, , Template.AbilitySourceName);
+	OverchargeEffect.AimBonusPerFocus = default.OVERCHARGE_AIM_BONUS;
+	OverchargeEffect.CritBonusPerFocus = default.OVERCHARGE_CRIT_BONUS;
+	Template.AddTargetEffect(OverchargeEffect);
 
 	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
 	//  NOTE: No visualization on purpose!
@@ -489,6 +448,7 @@ static function X2DataTemplate AddTerrorPanicAbility()
 	Template.AddShooterEffectExclusions();
 
 	StatCheck = new class'X2AbilityToHitCalc_StatCheck_UnitVsUnit';
+	StatCheck.AttackerStat = eStat_Will;
 	StatCheck.BaseValue = default.TERROR_STAT_CHECK_BASE_VALUE;
 	Template.AbilityToHitCalc = StatCheck;
 
@@ -520,7 +480,7 @@ static function X2AbilityTemplate AddApotheosis()
 	Template.AbilitySourceName = 'eAbilitySource_Psionic';
 	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_AlwaysShow;
 	Template.IconImage = "img:///UILibrary_PerkIcons.UIPerk_andromedon_robotbattlesuit";
-
+	Template.ActivationSpeech = 'IonicStorm';
 	Template.Hostility = eHostility_Neutral;
 
 	Template.AbilityToHitCalc = default.DeadEye;
@@ -542,15 +502,15 @@ static function X2AbilityTemplate AddApotheosis()
 	Template.AbilityCooldown = Cooldown;
 
 	Effect = new class'X2Effect_Apotheosis';
-	Effect.BuildPersistentEffect(1, false, true, false, eGameRule_PlayerTurnBegin);
-	Effect.SetDisplayInfo(ePerkBuff_Bonus, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, false,,Template.AbilitySourceName);
+	Effect.BuildPersistentEffect(2, false, true, false, eGameRule_PlayerTurnBegin);
+	Effect.SetDisplayInfo(ePerkBuff_Bonus, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,,Template.AbilitySourceName);
 	// Effect.AddPersistentStatChange(eStat_Dodge, float(default.APOTHEOSIS_DODGE_BONUS));
 	Effect.FocusDamageMultiplier = default.APOTHEOSIS_DAMAGE_MULTIPLIER;
 	Effect.arrFocusModifiers.AddItem(EmptyFocusLevelModifiers);
 	Effect.arrFocusModifiers.AddItem(EmptyFocusLevelModifiers);
 	Effect.arrFocusModifiers.AddItem(EmptyFocusLevelModifiers);
 	Effect.arrFocusModifiers.AddItem(CreateFocusLevelModifiers(default.APOTHEOSIS_DODGE_BONUS, default.APOTHEOSIS_MOBILITY_BONUS));
-	Effect.arrFocusModifiers.AddItem(CreateFocusLevelModifiers(default.APOTHEOSIS_DODGE_BONUS, 2 * default.APOTHEOSIS_MOBILITY_BONUS));
+	Effect.arrFocusModifiers.AddItem(CreateFocusLevelModifiers(2 * default.APOTHEOSIS_DODGE_BONUS, 2 * default.APOTHEOSIS_MOBILITY_BONUS));
 	Template.AddTargetEffect(Effect);
 
 	Template.bSkipFireAction = false;
@@ -601,6 +561,174 @@ static function FocusLevelModifiers CreateFocusLevelModifiers(int DodgeBonus, in
 	FocusLevelModifiers.StatChanges.AddItem(NewStatChange);
 
 	return FocusLevelModifiers;
+}
+
+
+static function X2AbilityTemplate Indomitable()
+{
+	local X2AbilityTemplate				Template;
+	local X2Effect_Indomitable	IndomitableEffect;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'Indomitable');
+
+//BEGIN AUTOGENERATED CODE: Template Overrides 'MeditationPreparation'
+	Template.AbilitySourceName = 'eAbilitySource_Psionic';
+//END AUTOGENERATED CODE: Template Overrides 'MeditationPreparation'
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_NeverShow;
+	Template.IconImage = "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_meditation";
+	Template.AbilityTriggers.AddItem(default.UnitPostBeginPlayTrigger);
+
+	Template.Hostility = eHostility_Neutral;
+
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+
+
+	IndomitableEffect = new class'X2Effect_Indomitable';
+	Template.AddShooterEffect(IndomitableEffect);
+
+	Template.bSkipFireAction = true;
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+
+	// Template.AdditionalAbilities.AddItem('MeditationPreparationPassive');
+
+	return Template;
+}
+
+static function X2AbilityTemplate AddVoltFocusOnKills()
+{
+	local X2AbilityTemplate Template;	
+
+	Template = PurePassive('VoltFocusOnKills', "img:///UILibrary_LW_PerkPack.LW_AbilityDangerZone", false, 'eAbilitySource_Perk');
+	Template.bCrossClassEligible = false;
+	Template.AdditionalAbilities.AddItem('VoltFocusKillTracker');
+	return Template;
+}
+
+static function X2AbilityTemplate VoltFocusKillTracker()
+{
+	local X2AbilityTemplate					Template;
+	local X2AbilityTrigger_EventListener	EventTrigger;
+	local X2Effect_ModifyTemplarFocus		FocusEffect;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'VoltFocusKillTracker');
+
+	Template.IconImage = "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_templarFocus";
+//BEGIN AUTOGENERATED CODE: Template Overrides 'FocusKillTracker'
+	Template.AbilitySourceName = 'eAbilitySource_Psionic';
+//END AUTOGENERATED CODE: Template Overrides 'FocusKillTracker'
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_NeverShow;
+	Template.Hostility = eHostility_Neutral;
+	Template.bIsPassive = true;
+
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+	
+	EventTrigger = new class'X2AbilityTrigger_EventListener';
+	EventTrigger.ListenerData.Deferral = ELD_OnStateSubmitted;
+	EventTrigger.ListenerData.EventID = 'KillMail';
+	EventTrigger.ListenerData.Filter = eFilter_Unit;
+	EventTrigger.ListenerData.EventFn = VoltFocusKillTracker_Listener;
+	Template.AbilityTriggers.AddItem(EventTrigger);
+
+	FocusEffect = new class'X2Effect_ModifyTemplarFocus';
+	FocusEffect.TargetConditions.AddItem(new class'X2Condition_GhostShooter');
+	Template.AddTargetEffect(FocusEffect);
+
+	Template.bSkipFireAction = true;
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+	Template.MergeVisualizationFn = class'X2Ability_TemplarAbilitySet'.static.DesiredVisualizationBlock_MergeVisualization;
+
+	return Template;
+}
+
+
+
+static function EventListenerReturn VoltFocusKillTracker_Listener(Object EventData, Object EventSource, XComGameState GameState, Name EventID, Object CallbackData)
+{
+	local XComGameStateContext_Ability AbilityContext;
+	local XComGameStateContext FindContext;
+	local int VisualizeIndex;
+	local XComGameStateHistory History;
+	local XComGameState_Ability Ability;
+	local XComGameState_Unit SourceUnit;
+
+	History = `XCOMHISTORY;
+
+	FindContext = GameState.GetContext();
+	AbilityContext = XComGameStateContext_Ability(GameState.GetContext());
+
+	SourceUnit = XComGameState_Unit(History.GetGameStateForObjectID(AbilityContext.InputContext.SourceObject.ObjectID));
+
+	Ability = XComGameState_Ability(History.GetGameStateForObjectID(SourceUnit.FindAbility('VoltFocusKillTracker', AbilityContext.InputContext.ItemObject).ObjectID));
+	if (AbilityContext != None && AbilityContext.InterruptionStatus != eInterruptionStatus_Interrupt)
+	{
+		if (AbilityContext.InputContext.AbilityTemplateName == 'Volt')
+		{
+			VisualizeIndex = GameState.HistoryIndex;
+			while (FindContext.InterruptionHistoryIndex > -1)
+			{
+				FindContext = History.GetGameStateFromHistory(FindContext.InterruptionHistoryIndex).GetContext();
+				VisualizeIndex = FindContext.AssociatedState.HistoryIndex;
+			}
+			Ability.AbilityTriggerAgainstSingleTarget(SourceUnit.GetReference(), false, VisualizeIndex);
+		}
+	}
+	return ELR_NoInterrupt;
+}
+
+
+static function X2AbilityTemplate DoubleRendFocus()
+{
+	local X2AbilityTemplate Template;
+	local X2Effect_ModifyTemplarFocus FocusEffect;
+	local X2AbilityTrigger_EventListener EventListener;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'DoubleRendFocus');
+	Template.IconImage = "img:///UILibrary_PerkIcons.UIPerk_advent_commandaura";
+	Template.Hostility = eHostility_Neutral;
+//BEGIN AUTOGENERATED CODE: Template Overrides 'Overcharge'
+	Template.AbilitySourceName = 'eAbilitySource_Psionic';
+//END AUTOGENERATED CODE: Template Overrides 'Overcharge'
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_NeverShow;
+
+	Template.AdditionalAbilities.AddItem('DoubleRendFocusPassive');
+	
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+
+	EventListener = new class'X2AbilityTrigger_EventListener';
+	EventListener.ListenerData.Deferral = ELD_OnStateSubmitted;
+	EventListener.ListenerData.EventFn = class'XComGameState_Ability'.static.AbilityTriggerEventListener_Self;
+	EventListener.ListenerData.EventID = 'RendActivated';
+	EventListener.ListenerData.Filter = eFilter_Unit;
+	Template.AbilityTriggers.AddItem(EventListener);
+
+	//	Grants Focus on Rend hit
+	FocusEffect = new class'X2Effect_ModifyTemplarFocus';
+	FocusEffect.TargetConditions.AddItem(new class'X2Condition_GhostShooter');
+	Template.AddShooterEffect(FocusEffect);
+
+	Template.AbilityShooterConditions.AddItem(default.LivingShooterProperty);
+
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	//  NOTE: No visualization on purpose!
+
+	Template.bShowPostActivation = true;
+	Template.bSkipFireAction = true;
+
+	return Template;
+}
+
+static function X2AbilityTemplate DoubleRendFocusPassive()
+{
+	local X2AbilityTemplate Template;	
+
+	Template = PurePassive('DoubleRendFocusPassive', "img:///UILibrary_PerkIcons.UIPerk_advent_commandaura", false, 'eAbilitySource_Perk');
+	Template.bCrossClassEligible = false;
+	return Template;
 }
 
 defaultproperties

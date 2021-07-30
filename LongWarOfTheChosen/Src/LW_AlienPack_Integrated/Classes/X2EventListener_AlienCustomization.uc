@@ -126,7 +126,6 @@ static function EventListenerReturn OnUnitBeginPlay(
     Name EventID,
     Object CallbackData)
 {
-	local XComGameStateHistory History;
 	local XComGameState NewGameState;
 	local XComGameState_Unit_AlienCustomization AlienCustomization;
 	local LWUnitVariation UnitVariation;
@@ -135,7 +134,6 @@ static function EventListenerReturn OnUnitBeginPlay(
 	local X2EventManager EventManager;
 	local Object CustomizationObject;
 
-	History = `XCOMHISTORY;
 	EventManager = `XEVENTMGR;
 
 	`APTRACE("Alien Pack Customization Manager : OnUnitBeginPlay triggered.");
@@ -162,19 +160,15 @@ static function EventListenerReturn OnUnitBeginPlay(
 					{
 						`APTRACE("AlienCustomization: Template passed, applying :" @ UnitVariation.CharacterNames[0]);
 
-						ChangeContainer = class'XComGameStateContext_ChangeContainer'.static.CreateEmptyChangeContainer("Creating Alien Customization Component");
-						NewGameState = History.CreateNewGameState(true, ChangeContainer);
-						UpdatedUnitState = XComGameState_Unit(GameState.ModifyStateObject(class'XComGameState_Unit', UnitState.ObjectID));
+						NewGameState = class'XComGameStateContext_ChangeContainer'.static.CreateChangeState("Creating Alien Customization Component");
+						UpdatedUnitState = XComGameState_Unit(NewGameState.ModifyStateObject(class'XComGameState_Unit', UnitState.ObjectID));
 
 						AlienCustomization = class'XComGameState_Unit_AlienCustomization'.static.CreateCustomizationComponent(UpdatedUnitState, NewGameState);
 						AlienCustomization.GenerateCustomization(UnitVariation, UpdatedUnitState, NewGameState);
 
-                        // Can't use ChangeContainer variable here; must get the context from
-                        // NewGameState (but don't know why)
-                        ChangeContainer = XComGameStateContext_ChangeContainer(NewGameState.GetContext());
+						ChangeContainer = XComGameStateContext_ChangeContainer(NewGameState.GetContext());
 						ChangeContainer.BuildVisualizationFn = CustomizeAliens_BuildVisualization;
 						ChangeContainer.SetAssociatedPlayTiming(SPT_BeforeSequential);
-						ChangeContainer.SetDesiredVisualizationBlockIndex(GameState.HistoryIndex);
 						`GAMERULES.SubmitGameState(NewGameState);
 
 						AlienCustomization.ApplyCustomization();

@@ -8,7 +8,6 @@
 
 class Helpers_LW extends Object config(GameCore) dependson(Engine);
 
-var const string CA_FAILURE_RISK_MARKER;
 var const string CHOSEN_SPAWN_TAG_SUFFIX;
 
 struct ProjectileSoundMapping
@@ -235,6 +234,23 @@ static function bool YellowAlertEnabled()
 static function bool DynamicEncounterZonesDisabled()
 {
 	return default.DisableDynamicEncounterZones;
+}
+
+// Uses visibility rules to determine whether one unit is flanked by
+// another. This is because XCGS_Unit.IsFlanked() does not work for
+// squadsight attackers.
+static function bool IsUnitFlankedBy(XComGameState_Unit Target, XComGameState_Unit MaybeFlanker)
+{
+	local GameRulesCache_VisibilityInfo VisInfo;
+
+	if (`TACTICALRULES.VisibilityMgr.GetVisibilityInfo(MaybeFlanker.ObjectID, Target.ObjectID, VisInfo))
+	{
+		return Target.CanTakeCover() && VisInfo.TargetCover == CT_None;
+	}
+	else
+	{
+		return Target.IsFlanked(MaybeFlanker.GetReference(), true);
+	}
 }
 
 // Copied from XComGameState_Unit::GetEnemiesInRange, except will retrieve all units on the alien team within
@@ -496,25 +512,6 @@ static function XComGameState_HeadquartersProjectRecoverWill GetWillRecoveryProj
 	return none;
 }
 
-static function bool DidCovertActionFail(XComGameState_CovertAction CAState)
-{
-	local CovertActionRisk Risk;
-
-	foreach CAState.Risks(Risk)
-	{
-		if (InStr(Caps(Risk.RiskTemplateName), Caps(default.CA_FAILURE_RISK_MARKER)) == 0)
-		{
-			if (Risk.bOccurs)
-			{
-				// The failure risk has triggered, so yes, the covert action failed.
-				return true;
-			}
-		}
-	}
-
-	return CAState.RewardsNotGivenOnCompletion;
-}
-
 // Returns:
 //  1 - Easy
 //  2 - Moderate
@@ -628,7 +625,10 @@ static function array<StateObjectReference> FindAvailableCapturedSoldiers(option
 	{
 		// Check whether the soldier is already attached as a mission or covert action reward
 		if (!IsRescueMissionAvailableForSoldier(CapturedSoldierRef, NewGameState))
+		{
+			`LWTrace("[RescueSoldier] Captured soldier (normal) available for rescue " $ CapturedSoldierRef.ObjectID);
 			CapturedSoldiers.AddItem(CapturedSoldierRef);
+		}
 	}
 
 	// Now collect any soldiers captured by the Chosen
@@ -638,7 +638,10 @@ static function array<StateObjectReference> FindAvailableCapturedSoldiers(option
 		{
 			// Check whether the soldier is already attached as a mission or covert action reward
 			if (!IsRescueMissionAvailableForSoldier(CapturedSoldierRef, NewGameState))
+			{
+				`LWTrace("[RescueSoldier] Captured soldier (Chosen - " $ ChosenState.GetMyTemplateName() $ ") available for rescue " $ CapturedSoldierRef.ObjectID);
 				CapturedSoldiers.AddItem(CapturedSoldierRef);
+			}
 		}
 	}
 
@@ -667,7 +670,10 @@ static function bool IsRescueMissionAvailableForSoldier(StateObjectReference Cap
 		foreach NewGameState.IterateByClassType(class'XComGameState_Reward', RewardState)
 		{
 			if (RewardState.RewardObjectReference.ObjectID == CapturedSoldierRef.ObjectID)
+			{
+				`LWTrace("[RescueSoldier] Found existing reward in new game state for captured soldier " $ CapturedSoldierRef.ObjectID);
 				return true;
+			}
 		}
 	}
 
@@ -680,7 +686,10 @@ static function bool IsRescueMissionAvailableForSoldier(StateObjectReference Cap
 		{
 			RewardState = XComGameState_Reward(History.GetGameStateForObjectID(StateRef.ObjectID));
 			if (RewardState.RewardObjectReference.ObjectID == CapturedSoldierRef.ObjectID)
+			{
+				`LWTrace("[RescueSoldier] Found existing mission for captured soldier " $ CapturedSoldierRef.ObjectID);
 				return true;
+			}
 		}
 	}
 
@@ -689,6 +698,7 @@ static function bool IsRescueMissionAvailableForSoldier(StateObjectReference Cap
 	ActionState = class'XComGameState_HeadquartersResistance'.static.GetCurrentCovertAction();
 	if (ActionState != none && CovertActionHasReward(ActionState, CapturedSoldierRef))
 	{
+		`LWTrace("[RescueSoldier] Currently active covert action is to rescue captured soldier " $ CapturedSoldierRef.ObjectID);
 		return true;
 	}
 
@@ -700,11 +710,13 @@ static function bool IsRescueMissionAvailableForSoldier(StateObjectReference Cap
 			ActionState = XComGameState_CovertAction(History.GetGameStateForObjectID(StateRef.ObjectID));
 			if (ActionState != none && CovertActionHasReward(ActionState, CapturedSoldierRef))
 			{
+				`LWTrace("[RescueSoldier] Found existing covert action for rescuing captured soldier " $ CapturedSoldierRef.ObjectID);
 				return true;
 			}
 		}
 	}
 
+	`LWTrace("[RescueSoldier] No existing rescue mission/covert action found for soldier " $ CapturedSoldierRef.ObjectID);
 	return false;
 }
 
@@ -725,8 +737,74 @@ static function bool CovertActionHasReward(XComGameState_CovertAction ActionStat
 	}
 }
 
+// Modifies an ability to be a free action. This is not idempotent, so
+// be careful calling it on an ability that is already a free action,
+// since the behaviour may subtly change. For example if the original
+// ability point cost is zero and free, that will change to 1 and free.
+static function MakeFreeAction(X2AbilityTemplate Template)
+{
+	local X2AbilityCost Cost;
+
+	foreach Template.AbilityCosts(Cost)
+	{
+		if (Cost.IsA('X2AbilityCost_ActionPoints'))
+		{
+			X2AbilityCost_ActionPoints(Cost).iNumPoints = 1;
+			X2AbilityCost_ActionPoints(Cost).bFreeCost = true;
+			X2AbilityCost_ActionPoints(Cost).bConsumeAllPoints = false;
+		}
+	}
+}
+
+static function RemoveAbilityTargetEffects(X2AbilityTemplate Template, name EffectClass)
+{
+	local int i;
+	for (i = Template.AbilityTargetEffects.Length - 1; i >= 0; i--)
+	{
+		if (Template.AbilityTargetEffects[i].isA(EffectClass))
+		{
+			Template.AbilityTargetEffects.Remove(i, 1);
+		}
+	}
+}
+
+static function RemoveAbilityShooterEffects(X2AbilityTemplate Template, name EffectClass)
+{
+	local int i;
+	for (i = Template.AbilityShooterEffects.Length - 1; i >= 0; i--)
+	{
+		if (Template.AbilityShooterEffects[i].isA(EffectClass))
+		{
+			Template.AbilityShooterEffects.Remove(i, 1);
+		}
+	}
+}
+
+static function RemoveAbilityShooterConditions(X2AbilityTemplate Template, name EffectClass)
+{
+	local int i;
+	for (i = Template.AbilityShooterConditions.Length - 1; i >= 0; i--)
+	{
+		if (Template.AbilityShooterConditions[i].isA(EffectClass))
+		{
+			Template.AbilityShooterConditions.Remove(i, 1);
+		}
+	}
+}
+
+static function RemoveAbilityMultiTargetEffects(X2AbilityTemplate Template, name EffectClass)
+{
+	local int i;
+	for (i = Template.AbilityMultiTargetEffects.Length - 1; i >= 0; i--)
+	{
+		if (Template.AbilityMultiTargetEffects[i].isA(EffectClass))
+		{
+			Template.AbilityMultiTargetEffects.Remove(i, 1);
+		}
+	}
+}
+
 defaultproperties
 {
-	CA_FAILURE_RISK_MARKER="CovertActionRisk_Failure"
 	CHOSEN_SPAWN_TAG_SUFFIX="_LWOTC_ChosenTag"
 }

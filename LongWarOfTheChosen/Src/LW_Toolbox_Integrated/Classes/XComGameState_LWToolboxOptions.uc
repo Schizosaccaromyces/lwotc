@@ -19,6 +19,8 @@ struct MissionOverride
 
 var config array<name> Suppress;
 
+var config float HEALTH_RECOVERED_FOR_RESCUED_SOLDIER;
+
 var localized string ToolboxTabName;
 
 // ***** HELP BUTTON ***** //
@@ -1564,6 +1566,7 @@ static function UpdateRewardSoldierTemplates()
 	Template = X2RewardTemplate(TemplateMgr.FindStrategyElementTemplate('Reward_SoldierCaptured')); 
 	Template.GenerateRewardFn = class'X2StrategyElement_RandomizedSoldierRewards'.static.GenerateCouncilSoldierReward;
 	Template.GiveRewardFn = GiveCouncilSoldierReward;
+	Template.CleanUpRewardFn = class'X2StrategyElement_DefaultRewards'.static.CleanUpRewardWithoutRemoval;
 	TemplateMgr.AddStrategyElementTemplate(Template, true);
 }
 
@@ -1575,6 +1578,18 @@ static function GiveCouncilSoldierReward(XComGameState NewGameState, XComGameSta
 	local XComGameState_Unit UnitState;
 	local XComGameState_AdventChosen ChosenState;
 	local StateObjectReference EmptyRef;
+	local int HPToHeal;
+
+	// Since the soldier has likely been out of action for a while, heal them
+	// somewhat so that the player doesn't then have to wait even longer for
+	// them to heal before the soldier can be used on missions.
+	//
+	// Note: this has to be done before the base game's `GiveCapturedSoldierReward`
+	// is called, because that's when the heal project is started.
+	UnitState = XComGameState_Unit(NewGameState.ModifyStateObject(class'XComGameState_Unit', RewardState.RewardObjectReference.ObjectID));
+	HPToHeal = UnitState.GetBaseStat(eStat_HP) - UnitState.GetCurrentStat(eStat_HP);
+	HPToHeal *= default.HEALTH_RECOVERED_FOR_RESCUED_SOLDIER;
+	UnitState.SetCurrentStat(eStat_HP, Max(UnitState.GetCurrentStat(eStat_HP) + Max(HPToHeal, 1), 1));
 
 	// Use vanilla behaviour first to actually add the soldier back into the
 	// Avenger crew and remove the bCaptured flag.
@@ -1609,6 +1624,7 @@ static function ReleaseSoldierFromAlienHQ(XComGameState NewGameState, StateObjec
 {
 	local XComGameState_HeadquartersAlien AlienHQ;
 
+	AlienHQ = XComGameState_HeadquartersAlien(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersAlien'));
 	// remove the soldier from the captured unit list so they don't show up again later in the playthrough
 	AlienHQ = XComGameState_HeadquartersAlien(NewGameState.ModifyStateObject(class'XComGameState_HeadquartersAlien', AlienHQ.ObjectID));
 	AlienHQ.CapturedSoldiers.RemoveItem(UnitRef);

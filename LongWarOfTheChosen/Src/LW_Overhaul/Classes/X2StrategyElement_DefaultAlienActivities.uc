@@ -515,7 +515,7 @@ static function array<name> ProtectRegionMissionRewards (XComGameState_LWAlienAc
 			if (RegionalAI.NumTimesLiberated == 0)
 			{
 				FactionState = class'Helpers_LW'.static.GetFactionFromRegion(PrimaryRegionState.GetReference());
-				if (!`SecondWaveEnabled('EnableChosen') &&
+				if (`SecondWaveEnabled('DisableChosen') &&
 					FactionState.bMetXCom && FactionState.GetInfluence() < eFactionInfluence_MAX)
 				{
 					RewardArray.AddItem('Reward_FactionInfluence_LW');
@@ -1808,7 +1808,7 @@ static function ActivateChosenIfEnabled(XComGameState NewGameState)
 	local XComGameState_AdventChosen ChosenState;
 	local array<XComGameState_AdventChosen> AllChosen;
 
-	if (`SecondWaveEnabled('EnableChosen'))
+	if (!`SecondWaveEnabled('DisableChosen'))
 	{
 		AlienHQ = XComGameState_HeadquartersAlien(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersAlien'));
 		AlienHQ.OnChosenActivation(NewGameState);
@@ -1886,6 +1886,7 @@ static function name RescueReward(bool IncludeRebel, bool IncludePrisoner, XComG
 	CapturedSoldiers = class'Helpers_LW'.static.FindAvailableCapturedSoldiers(NewGameState);
 	if (IncludePrisoner && CapturedSoldiers.Length > 0)
 	{
+		`LWTrace("[RescueSoldier] Adding a rescue captured soldier reward (RescueReward)");
 		Reward = 'Reward_SoldierCaptured';
 	}
 	else
@@ -1983,8 +1984,9 @@ static function OnEmergencyOffworldReinforcementsComplete(bool bAlienSuccess, XC
 	local XComGameState_WorldRegion RegionState, AdjacentRegion;
 	local XComGameState_WorldRegion_LWStrategyAI RegionalAI;
 	local XComGameState_WorldRegion_LWStrategyAI AdjacentRegionalAI;
+	local StateObjectReference                   LinkedRegionRef;
 	local int k, RandIndex;
-	local array<StateObjectReference> RegionLinks;
+	local array<XComGameState_WorldRegion> RegionLinks;
 
 	History = `XCOMHISTORY;
 
@@ -1997,17 +1999,25 @@ static function OnEmergencyOffworldReinforcementsComplete(bool bAlienSuccess, XC
 		`LWTRACE("EmergencyOffworldReinforcementsComplete : Alien Success, adding AlertLevel to primary and some surrounding regions");
 		// reinforcements have arrived
 		RegionalAI.LocalAlertLevel += default.EMERGENCY_REINFORCEMENT_PRIMARY_REGION_ALERT_BONUS;
-		RegionLinks = RegionState.LinkedRegions;
 
-		for (k=0; k < default.ADJACENT_REGIONS_REINFORCED_BY_REGULAR_ALERT_UFO; k++)
+		foreach RegionState.LinkedRegions(LinkedRegionRef)
 		{
-			RandIndex = `SYNC_RAND_STATIC(RegionState.LinkedRegions.Length);
-			AdjacentRegion = XComGameState_WorldRegion(NewGameState.GetGameStateForObjectID(RegionLinks[RandIndex].ObjectID));
-			if (AdjacentRegion==none)
-				AdjacentRegion = XComGameState_WorldRegion(History.GetGameStateForObjectID(RegionLinks[RandIndex].ObjectID));
-			RegionLinks.Remove(RandIndex, 1);
+			AdjacentRegion = XComGameState_WorldRegion(NewGameState.GetGameStateForObjectID(LinkedRegionRef.ObjectID));
+			if (AdjacentRegion == none)
+				AdjacentRegion = XComGameState_WorldRegion(`XCOMHISTORY.GetGameStateForObjectID(LinkedRegionRef.ObjectID));
+			if (AdjacentRegion != none && !RegionIsLiberated(AdjacentRegion, NewGameState))
+			{
+				RegionLinks.AddItem(AdjacentRegion);
+			}
+		}
+
+		for (k = 0; k < default.ADJACENT_REGIONS_REINFORCED_BY_REGULAR_ALERT_UFO; k++)
+		{
+			RandIndex = `SYNC_RAND_STATIC(RegionLinks.Length);
+			AdjacentRegion = RegionLinks[RandIndex];
 			if (AdjacentRegion != none)
 			{
+				RegionLinks.Remove(RandIndex, 1);
 				AdjacentRegionalAI = class'XComGameState_WorldRegion_LWStrategyAI'.static.GetRegionalAI(AdjacentRegion, NewGameState, true);
 				AdjacentRegionalAI.LocalAlertLevel += default.EMERGENCY_REINFORCEMENT_ADJACENT_REGION_ALERT_BONUS;
 			}
@@ -2088,8 +2098,9 @@ static function OnSuperEmergencyOffworldReinforcementsComplete(bool bAlienSucces
 	local XComGameState_WorldRegion						RegionState, AdjacentRegion;
 	local XComGameState_WorldRegion_LWStrategyAI		RegionalAI;
 	local XComGameState_WorldRegion_LWStrategyAI		AdjacentRegionalAI;
+	local StateObjectReference                          LinkedRegionRef;
 	local int k, RandIndex;
-	local array<StateObjectReference> RegionLinks;
+	local array<XComGameState_WorldRegion> RegionLinks;
 
 	History = `XCOMHISTORY;
 	RegionState = XComGameState_WorldRegion(NewGameState.GetGameStateForObjectID(ActivityState.PrimaryRegion.ObjectID));
@@ -2102,16 +2113,25 @@ static function OnSuperEmergencyOffworldReinforcementsComplete(bool bAlienSucces
 	{
 		`LWTRACE("SuperEmergencyOffworldReinforcementsComplete : Alien Success, adding AlertLevel to primary and some surrounding regions");
 		RegionalAI.LocalAlertLevel += default.SUPEREMERGENCY_REINFORCEMENT_PRIMARY_REGION_ALERT_BONUS;
-		RegionLinks = RegionState.LinkedRegions;
-		for (k=0; k < default.ADJACENT_REGIONS_REINFORCED_BY_SUPEREMERGENCY_ALERT_UFO; k++)
+
+		foreach RegionState.LinkedRegions(LinkedRegionRef)
 		{
-			RandIndex = `SYNC_RAND_STATIC(RegionState.LinkedRegions.Length);
-			AdjacentRegion = XComGameState_WorldRegion(NewGameState.GetGameStateForObjectID(RegionLinks[RandIndex].ObjectID));
-			if (AdjacentRegion==none)
-				AdjacentRegion = XComGameState_WorldRegion(History.GetGameStateForObjectID(RegionLinks[RandIndex].ObjectID));
-			RegionLinks.Remove(RandIndex, 1);
+			AdjacentRegion = XComGameState_WorldRegion(NewGameState.GetGameStateForObjectID(LinkedRegionRef.ObjectID));
+			if (AdjacentRegion == none)
+				AdjacentRegion = XComGameState_WorldRegion(`XCOMHISTORY.GetGameStateForObjectID(LinkedRegionRef.ObjectID));
+			if (AdjacentRegion != none && !RegionIsLiberated(AdjacentRegion, NewGameState))
+			{
+				RegionLinks.AddItem(AdjacentRegion);
+			}
+		}
+
+		for (k = 0; k < default.ADJACENT_REGIONS_REINFORCED_BY_SUPEREMERGENCY_ALERT_UFO; k++)
+		{
+			RandIndex = `SYNC_RAND_STATIC(RegionLinks.Length);
+			AdjacentRegion = RegionLinks[RandIndex];
 			if (AdjacentRegion != none)
 			{
+				RegionLinks.Remove(RandIndex, 1);
 				AdjacentRegionalAI = class'XComGameState_WorldRegion_LWStrategyAI'.static.GetRegionalAI(AdjacentRegion, NewGameState, true);
 				AdjacentRegionalAI.LocalAlertLevel += default.SUPEREMERGENCY_REINFORCEMENT_ADJACENT_REGION_ALERT_BONUS;
 			}
@@ -3166,6 +3186,7 @@ function array<Name> GetPoliticalPrisonersReward(XComGameState_LWAlienActivity A
 			NumCapturedSoldiers = CapturedSoldiers.Length;
 			while (NumRebels > 0 && NumCapturedSoldiers > 0 && Rewards.Length < default.MAX_CAPTURED_SOLDIER_REWARDS)
 			{
+				`LWTrace("[RescueSoldier] Adding a rescue captured soldier reward to Jailbreak");
 				Rewards.AddItem('Reward_SoldierCaptured');
 				--NumRebels;
 				--NumCapturedSoldiers;
@@ -3381,7 +3402,7 @@ static function X2DataTemplate CreateIntelRaidTemplate()
 	Template.OnActivityStartedFn = EmptyRetalBucket;
 	Template.WasMissionSuccessfulFn = none;  // always one objective
 	Template.GetMissionForceLevelFn = GetTypicalMissionForceLevel; // use regional ForceLevel
-	Template.GetMissionAlertLevelFn = GetTypicalMissionAlertLevel;
+	Template.GetMissionAlertLevelFn = GetIntelRaidAlertLevel;
 	Template.GetTimeUpdateFn = none;
 	Template.OnMissionExpireFn = OnRaidExpired; // just remove the mission
 	Template.GetMissionRewardsFn = GetAnyRaidRewards;
@@ -3775,6 +3796,25 @@ static function int GetTypicalMissionForceLevel(XComGameState_LWAlienActivity Ac
 		`LWTRACE("Activity " $ ActivityState.GetMyTemplateName $ ": Mission Force Level =" $ RegionalAIState.LocalForceLevel + ActivityState.GetMyTemplate().ForceLevelModifier );
 	}
 	return RegionalAIState.LocalForceLevel + ActivityState.GetMyTemplate().ForceLevelModifier;
+}
+
+static function int GetIntelRaidAlertLevel(XComGameState_LWAlienActivity ActivityState, XComGameState_MissionSite MissionSite, XComGameState NewGameState)
+{
+	local XComGameState_WorldRegion RegionState;
+	local XComGameState_WorldRegion_LWStrategyAI RegionalAIState;
+	local int AlertLevel;
+
+	RegionState = MissionSite.GetWorldRegion();
+	RegionalAIState = class'XComGameState_WorldRegion_LWStrategyAI'.static.GetRegionalAI(RegionState, NewGameState);
+
+	AlertLevel = GetTypicalMissionAlertLevel(ActivityState, MissionSite, NewGameState);
+
+	// Adjust the alert level based on Force Level to ensure the first couple of intel raids
+	// aren't quite as strong a shock to the player's system. This is a bit of a hack, but
+	// if it works out, parameterise the 8 (the 4 is just half that value).
+	AlertLevel -= Max(0, FFloor((8 - RegionalAIState.LocalForceLevel) / 4) + 1);
+
+	return AlertLevel;
 }
 
 static function int GetTypicalMissionAlertLevel(XComGameState_LWAlienActivity ActivityState, XComGameState_MissionSite MissionSite, XComGameState NewGameState)

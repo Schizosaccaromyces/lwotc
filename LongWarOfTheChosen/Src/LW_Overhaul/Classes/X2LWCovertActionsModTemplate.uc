@@ -31,24 +31,29 @@ static function UpdateCovertActions(X2StrategyElementTemplate Template, int Diff
 		case 'CovertAction_SuperiorWeaponUpgrade':
 		case 'CovertAction_SuperiorPCS':
 			CaTemplate.RequiredFactionInfluence = eFactionInfluence_Minimal;
+			CaTemplate.bUnique = false;
 		case 'CovertAction_GatherSupplies':
 		case 'CovertAction_GatherIntel':
 		case 'CovertAction_FormSoldierBond':
-		case 'CovertAction_AlienLoot':
+		case 'CovertAction_ResistanceMec':
 			ConfigureEasyCovertAction(CATemplate);
 			break;
 		case 'CovertAction_RecruitScientist':
 		case 'CovertAction_RecruitEngineer':
 			CaTemplate.RequiredFactionInfluence = eFactionInfluence_Respected;
+		case 'CovertAction_AlienLoot':
+			CATemplate.Risks.RemoveItem('CovertActionRisk_SoldierCaptured');
 		case 'CovertAction_EnemyCorpses':
 		case 'CovertAction_CancelChosenActivity':
 		case 'CovertAction_DelayChosen':
 		case 'CovertAction_ResistanceContact':
+		case 'CovertAction_RecruitRebels':
 		case 'CovertAction_SharedAbilityPoints':
 			ConfigureModerateCovertAction(CATemplate);
 			break;
 		case 'CovertAction_ImproveComInt':
 			RemoveStaffSlots(CATemplate, 'CovertActionScientistStaffSlot');
+			CATemplate.RequiredFactionInfluence = EFactionInfluence(eFactionInfluence_MAX + 1);
 			break;
 		case 'CovertAction_RecruitExtraFactionSoldier':
 			CATemplate.bDisplayIgnoresInfluence = false;  // Don't roll this CA if the player can't run it!

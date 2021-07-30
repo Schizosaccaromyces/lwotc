@@ -267,6 +267,12 @@ AblativeHPLabel="Ablative HP"
 [X2Ability_LW_TechnicalAbilitySet]
 strMaxScatter="\nMax Scatter (Tiles): "
 
+; LWOTC Needs Translation
+[X2Ability_LW_ChosenAbilities]
+ShieldedStatBuffsLocDescription="Bonus Aim, Critical hit Chance, Will and Psi Offense."
+ImpactCompensationBuffDescription="Reducing all incoming damage by <Ability:IMPACT_COMPENSATION_CURRENT_DR/>%"
+; End Translation
+
 [XComGameState_LWListenerManager]
 ResistanceHQBodyText="Access Resistance Haven Information"
 
@@ -295,6 +301,9 @@ UnitAlreadyInSquad="Unit In Another Squad"
 UnitInSquad="Unit In A Squad"
 RankTooLow="Rank Too Low"
 CannotModifyOnMissionSoldierTooltip="Cannot modify soldier currently on mission"
+; LWOTC Needs Translation
+ReasonClassAbilityPickedAtRank="Already picked a class ability at this rank"
+; End Translation
 
 [XComGameState_LWPersistentSquad]
 +DefaultSquadNames="Menace"
@@ -696,3 +705,7 @@ strCovertActionFailed="FAILED"
 ; LWOTC Needs Translation
 ScrollObjectiveDescriptionStr="SCROLL OBJECTIVE DESCRIPTION"
 ; End Translation
+
+[X2Effect_ChosenLoot]
+m_strChosenLoot="(<XGParam:IntValue0/>) <XGParam:StrValue0/!ItemName/> Rewarded for Killing the Chosen."
+

@@ -18,17 +18,17 @@ BriefSummary="Ces extraterrestres siègent au sommet de la hiérarchie interne d
 
 [WarCry X2AbilityTemplate]
 LocFriendlyName="Cri de guerre"
-LocLongDescription="D'importants bonus de visée, de volonté et de mobilité sont octroyés aux autres Goliaths et des bonus moins importants sont accordés aux autres extraterrestres et créatures d'ADVENT. Temps de rechargement : 6 tours."
+LocLongDescription="D'importants bonus de visée, de volonté et de mobilité sont octroyés aux autres Goliaths et des bonus moins importants sont accordés aux autres extraterrestres et créatures d'ADVENT. Temps de rechargement: 6 tours."
 LocHelpText="Bonus accordés aux autres Goliaths et certains autres extraterrestres"
 LocFlyOverText="Cri de guerre"
-LocPromotionPopupText="<Bullet/> D'importants bonus de visée, de volonté et de mobilité sont octroyés aux autres Goliaths et des bonus moins importants sont accordés aux autres extraterrestres et créatures d'ADVENT.<br/><Bullet/> Temps de rechargement : 6 tours.<br/>"
+LocPromotionPopupText="<Bullet/> D'importants bonus de visée, de volonté et de mobilité sont octroyés aux autres Goliaths et des bonus moins importants sont accordés aux autres extraterrestres et créatures d'ADVENT.<br/><Bullet/> Temps de rechargement: 6 tours.<br/>"
 
 [BayonetCharge X2AbilityTemplate]
 LocFriendlyName="Charge de baïonnette"
-LocLongDescription="Permet une attaque au corps à corps, n'importe où dans la zone de sprint. Temps de rechargement : 4 tours."
+LocLongDescription="Permet une attaque au corps à corps, n'importe où dans la zone de sprint. Temps de rechargement: 4 tours."
 LocHelpText="Permet une attaque au corps à corps, n'importe où dans la zone de sprint."
 LocFlyOverText="Charge de baïonnette"
-LocPromotionPopupText="<Bullet/> Permet une attaque au corps à corps, n'importe où dans la zone de sprint.<br/><Bullet/> Temps de rechargement : 4 tours.<br/>"
+LocPromotionPopupText="<Bullet/> Permet une attaque au corps à corps, n'importe où dans la zone de sprint.<br/><Bullet/> Temps de rechargement: 4 tours.<br/>"
 
 [Beastmaster_LW X2AbilityTemplate]
 LocFriendlyName="Maître bestial"
@@ -65,14 +65,14 @@ LocFlyOverText="Étourdissement"
 LocHelpText="Tentez d'étourdir un ennemi à portée de corps à corps."
 LocLongDescription="Tentez d'étourdir un ennemi à portée de corps à corps."
 LocPromotionPopupText="<Bullet/> Tentez d'étourdir un ennemi à portée de corps à corps."
-LocMissMessage="Raté !"
+LocMissMessage="Raté!"
 
 [PersonalShield X2AbilityTemplate]
 LocFriendlyName="Bouclier personnel"
 LocFlyOverText="Bouclier personnel"
-LocHelpText="Octroie 5 points d'armure bonus. Temps de rechargement : 5 tours."
-LocLongDescription="Octroie 5 points d'armure bonus. Temps de rechargement : 5 tours."
-LocPromotionPopupText="<Bullet/> Octroie 5 points d'armure bonus. <br/><Bullet/> Temps de rechargement : 5 tours. <br/><Bullet/> Consomme une action et ne met pas fin au tour.<br/>"
+LocHelpText="Octroie 5 points d'armure bonus. Temps de rechargement: 5 tours."
+LocLongDescription="Octroie 5 points d'armure bonus. Temps de rechargement: 5 tours."
+LocPromotionPopupText="<Bullet/> Octroie 5 points d'armure bonus. <br/><Bullet/> Temps de rechargement: 5 tours. <br/><Bullet/> Consomme une action et ne met pas fin au tour.<br/>"
 
 [MassReanimation_LW X2AbilityTemplate]
 LocFriendlyName="Réanimation de masse"
@@ -83,14 +83,16 @@ LocPromotionPopupText="<Bullet/> Réanimez tous les cadavres à proximité sous 
 
 [ReadyForAnything X2AbilityTemplate]
 LocFriendlyName="Prêt à tout"
-LocFlyOverText="Vigilance : Prêt à tout"
-LocHelpText="Passez en vigilance après un tir normal à l'arme principale."
-LocLongDescription="Passez en vigilance après un tir normal à l'arme principale."
-LocPromotionPopupText="<Bullet/> Passez en vigilance après un tir normal à l'arme principale."
+LocFlyOverText="Vigilance: Prêt à tout"
+; LWOTC translated
+LocHelpText="Passez en vigilance après un tir normal à l'arme principale ayant mis fin à votre tour."
+LocLongDescription="Passez en vigilance après un tir normal à l'arme principale ayant mis fin à votre tour."
+LocPromotionPopupText="<Bullet/> Passez en vigilance après un tir normal à l'arme principale ayant mis fin à votre tour."
+; End translated
 
 [ReadyForAnythingFlyover X2AbilityTemplate]
 LocFriendlyName="Prêt à tout"
-LocFlyOverText="Vigilance : Prêt à tout"
+LocFlyOverText="Vigilance: Prêt à tout"
 LocHelpText="Passez en vigilance après un tir normal à l'arme principale."
 LocLongDescription="Passez en vigilance après un tir normal à l'arme principale."
 LocPromotionPopupText="<Bullet/> Passez en vigilance après un tir normal à l'arme principale."
@@ -121,6 +123,9 @@ strCharacterName="Centurion Goliath"
 FriendlyName="Fusil de centurion"
 BriefSummary="XCOM est parvenu à récupérer diverses petites armes d'infanterie, dont voici le modèle le plus commun, semblable au fusil utilisé il y a vingt ans. Bien que largement moins puissant que la technologie magnétique d'ADVENT, il peut être amélioré grâce à d'autres armes de récupération, une fois l'approche technique adéquate mise au point."
 TacticalText="<Bullet/> Un tir avec son arme principale met toujours fin au tour d'un soldat. \n<Bullet/> Si le soldat utilise ses deux actions disponibles pour tirer, trois coups partiront avec une précision réduite, mais une plus grande efficacité générale. \n<Bullet/> Utilisez les améliorations récupérées sur les ennemis pour augmenter l'efficacité tactique du fusil d'assaut."
+; LWOTC translated
+AbilityDescName="fusil plasmique"
+; End translated
 
 [MutonM2_LWGrenade X2GrenadeTemplate]
 FriendlyName="Grenade extraterrestre"
@@ -142,6 +147,9 @@ strCharacterName="Goliath d'élite"
 
 [MutonM3_LW_Wpn X2WeaponTemplate]
 FriendlyName="Canon plasmique d'élite"
+; LWOTC translated
+AbilityDescName="canon plasmique"
+; End translated
 
 [MutonM3_LWGrenade X2GrenadeTemplate]
 FriendlyName="Grenade extraterrestre"
@@ -166,12 +174,21 @@ strCharacterName="Naja d'élite"
 
 [NajaM1_WPN X2WeaponTemplate]
 FriendlyName="Fusil de précision de Naja"
+; LWOTC translated
+AbilityDescName="fusil de précision"
+; End translated
 
 [NajaM2_WPN X2WeaponTemplate]
 FriendlyName="Fusil de précision de Naja"
+; LWOTC translated
+AbilityDescName="fusil de précision"
+; End translated
 
 [NajaM3_WPN X2WeaponTemplate]
 FriendlyName="Fusil de précision de Naja"
+; LWOTC translated
+AbilityDescName="fusil de précision"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; Sidewinder ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -186,12 +203,21 @@ strCharacterName="Couleuvre d'élite"
 
 [SidewinderM1_WPN X2WeaponTemplate]
 FriendlyName="Débusqueur de Couleuvre"
+; LWOTC translated
+AbilityDescName="débusqueur"
+; End translated
 
 [SidewinderM2_WPN X2WeaponTemplate]
 FriendlyName="Débusqueur de Couleuvre"
+; LWOTC translated
+AbilityDescName="débusqueur"
+; End translated
 
 [SidewinderM3_WPN X2WeaponTemplate]
 FriendlyName="Débusqueur de Couleuvre"
+; LWOTC translated
+AbilityDescName="débusqueur"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; Viper ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -203,9 +229,15 @@ strCharacterName="Vipère d'élite"
 
 [ViperM2_LW_WPN X2WeaponTemplate]
 FriendlyName="Fusil à rayons"
+; LWOTC translated
+AbilityDescName="fusil plasmique"
+; End translated
 
 [ViperM3_LW_WPN X2WeaponTemplate]
 FriendlyName="Fusil à rayons"
+; LWOTC translated
+AbilityDescName="fusil plasmique"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; ArchonM2_LW ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -224,18 +256,27 @@ strCharacterName="Tirailleur d'ADVENT"
 
 [AdvGunnerM1_WPN X2WeaponTemplate]
 FriendlyName="Automatique"
+; LWOTC translated
+AbilityDescName="canon"
+; End translated
 
 [AdvGunnerM2 X2CharacterTemplate]
 strCharacterName="Tirailleur lourd d'ADVENT"
 
 [AdvGunnerM2_WPN X2WeaponTemplate]
 FriendlyName="Automatique"
+; LWOTC translated
+AbilityDescName="canon"
+; End translated
 
 [AdvGunnerM3 X2CharacterTemplate]
 strCharacterName="Tirailleur d'élite d'ADVENT"
 
 [AdvGunnerM3_WPN X2WeaponTemplate]
 FriendlyName="Automatique"
+; LWOTC translated
+AbilityDescName="canon"
+; End translated
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; AdvSentryM1-3 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -245,18 +286,27 @@ strCharacterName="Factionnaire d'ADVENT"
 
 [AdvSentryM1_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvSentryM2 X2CharacterTemplate]
 strCharacterName="Gardien d'ADVENT"
 
 [AdvSentryM2_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvSentryM3 X2CharacterTemplate]
 strCharacterName="Sentinelle d'ADVENT"
 
 [AdvSentryM3_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; AdvGrenadierM1-3 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -337,9 +387,15 @@ strCharacterName="Drone chasseur d'ADVENT"
 
 [LWDroneM1_WPN X2WeaponTemplate]
 FriendlyName="Choc de drone"
+; LWOTC translated
+AbilityDescName="arme de choc"
+; End translated
 
 [LWDroneM2_WPN X2WeaponTemplate]
 FriendlyName="Électrochoc de drone"
+; LWOTC translated
+AbilityDescName="arme de choc"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; AdvMecArcherM1 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -348,9 +404,15 @@ strCharacterName="CEM archer"
 
 [AdvMECArcher_WPN X2WeaponTemplate]
 FriendlyName="CEM minimag"
+; LWOTC translated
+AbilityDescName="minigun"
+; End translated
 
 [AdvMECArcher_Shoulder_WPN X2WeaponTemplate]
 FriendlyName="Lance-roquettes"
+; LWOTC translated
+AbilityDescName="micro-missiles"
+; End translated
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; AdvMecArcherM2 ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -384,45 +446,69 @@ strCharacterName="Sergent d'ADVENT"
 
 [AdvSergeantM1_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvSergeantM2 X2CharacterTemplate]
 strCharacterName="Sergent-chef d'ADVENT"
 
 [AdvSergeantM2_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvShockTroop X2CharacterTemplate]
 strCharacterName="Soldat de choc d'ADVENT"
 
 [AdvShockTroop_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvCommando X2CharacterTemplate]
 strCharacterName="Commando d'ADVENT"
 
 [AdvCommando_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvVanguard X2CharacterTemplate]
 strCharacterName="Garde d'ADVENT"
 
 [AdvVanguard_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
 [AdvScout X2CharacterTemplate]
 strCharacterName="Éclaireur d'ADVENT"
 
 [AdvScout_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
-[AdvGeneralM1_LW X2CharacterTemplate]
+[AdvGeneralM1 X2CharacterTemplate]
 strCharacterName="Général d'ADVENT"
 
-[AdvGeneralM1_LW_WPN X2WeaponTemplate]
+[AdvGeneralM1_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated
 
-[AdvGeneralM2_LW X2CharacterTemplate]
+[AdvGeneralM2 X2CharacterTemplate]
 strCharacterName="Général d'ADVENT"
 
-[AdvGeneralM2_LW_WPN X2WeaponTemplate]
+[AdvGeneralM2_WPN X2WeaponTemplate]
 FriendlyName="Fusil magnétique d'ADVENT"
+; LWOTC translated
+AbilityDescName="fusil magnétique"
+; End translated

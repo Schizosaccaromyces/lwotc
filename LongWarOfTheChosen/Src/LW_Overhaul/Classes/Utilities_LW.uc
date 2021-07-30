@@ -14,6 +14,8 @@ var config float REFLEX_ACTION_CHANCE_REDUCTION;
 var config array<float> LOW_INFILTRATION_MODIFIER_ON_REFLEX_ACTIONS;
 var config array<float> HIGH_INFILTRATION_MODIFIER_ON_REFLEX_ACTIONS;
 
+const CA_FAILURE_RISK_MARKER = "CovertActionRisk_Failure";
+
 const OffensiveReflexAction = 'OffensiveReflexActionPoint_LW';
 const DefensiveReflexAction = 'DefensiveReflexActionPoint_LW';
 const NoReflexActionUnitValue = 'NoReflexAction_LW';
@@ -708,6 +710,32 @@ static function bool KillXpIsCapped()
 	return MissionKillXp >= MaxKillXp;
 }
 
+static function bool DidCovertActionFail(XComGameState_CovertAction CAState)
+{
+	local CovertActionRisk Risk;
+
+	foreach CAState.Risks(Risk)
+	{
+		if (InStr(Caps(Risk.RiskTemplateName), Caps(CA_FAILURE_RISK_MARKER)) == 0)
+		{
+			if (Risk.bOccurs)
+			{
+				// The failure risk has triggered, so yes, the covert action failed.
+				return true;
+			}
+		}
+	}
+
+	// Check whether the covert action was ambushed, and if so, whether the mission
+	// was successful.
+	if (CAState.bAmbushed)
+	{
+		return class'XComGameState_CovertActionTracker'.static.CreateOrGetCovertActionTracker().LastAmbushMissionFailed;
+	}
+
+	return CAState.RewardsNotGivenOnCompletion;
+}
+
 // Finds out what the alert level of a given unit was before the current one.
 // Mostly useful for finding out whether a unit entered red alert from green
 // or yellow.
@@ -741,7 +769,79 @@ static function float GetUnitValue(XComGameState_Unit UnitState, Name ValueName)
 	return Value.fValue;
 }
 
-simulated static function bool IsOnStrategyMap()
+// Implements the rules for ability icon colors depending on action point cost,
+// whether it's an objective ability, etc.
+static function GetAbilityIconColor(
+	bool IsObjective,
+	bool IsFree,
+	bool IsPsionic,
+	bool IsTurnEnding,
+	int ActionPointCost,
+	out string BackgroundColor,
+	out string ForegroundColor)
+{
+	if (IsObjective)
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_OBJECTIVE; // orange
+	}
+	else if (IsPsionic)
+	{
+		if (ActionPointCost >= 2)
+		{
+			BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_PSIONIC_2;
+		}
+		else if (IsTurnEnding)
+		{
+			BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_PSIONIC_END;
+		}
+		else if (!IsFree)
+		{
+			BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_PSIONIC_1; // light lavender
+		}
+		else
+		{
+			BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_PSIONIC_FREE; // lavender-white
+		}
+	}
+	else if (ActionPointCost >= 2)
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_2; // yellow
+	}
+	// Takes precedence over free-action costs mostly for Overwatch
+	// (which is a "free" action but ends the turn).
+	else if (IsTurnEnding)
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_END; // cyan
+	}
+	else if (IsFree)
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_FREE; //green
+	}
+	else
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_1; // white
+	}
+}
+
+// Returns the force level maintained by LWOTC rather than the one from
+// the alien HQ, since those two force levels may differ.
+static function int GetLWForceLevel()
+{
+	local XComGameStateHistory History;
+	local XComGameState_WorldRegion RegionState;
+	
+	History = `XCOMHISTORY;
+
+	// Get the first region since all regions have the same force level
+	foreach History.IterateByClassType(class'XComGameState_WorldRegion', RegionState)
+	{
+		break;
+	}
+
+	return class'XComGameState_WorldRegion_LWStrategyAI'.static.GetRegionalAI(RegionState).LocalForceLevel;
+}
+
+static function bool IsOnStrategyMap()
 {
 	// KDM : If you are on the strategy map return true; if you are in the Avenger return false.
 	if (`HQGAME == none || `HQPRES == none || `HQPRES.StrategyMap2D == none)

@@ -260,6 +260,9 @@ var config array<DamageStep> EnvironmentDamageSteps;
 
 var config array<name> ExplosiveFalloffAbility_Exclusions;
 var config array<name> ExplosiveFalloffAbility_Inclusions;
+var config array<name> ExplosiveFalloffItem_Exclusions;
+
+var config array<name> ABILITIES_TO_DISABLE_GRENADE_COOLDOWN;
 
 var config int ALIEN_RULER_ACTION_BONUS_APPLY_CHANCE;
 
@@ -311,13 +314,13 @@ static function array<X2DataTemplate> CreateTemplates()
 	Templates.AddItem(CreateRemovePPClassesTemplate());
 	Templates.AddItem(CreateUpdateQuestItemsTemplate());
 	TEmplates.AddItem(CreateGeneralCharacterModTemplate());
-	Templates.AddItem(CreateModifyDarkEventsTemplate());
 	Templates.AddItem(CreateModifyPOIsTemplate());
 	Templates.AddItem(CreateModifyHackRewardsTemplate());
 	Templates.AddItem(CreateReconfigFacilityUpgradesTemplate());
 	Templates.AddItem(CreateModifyStaffSlotsTemplate());
 	Templates.AddItem(CreateModifyRewardsTemplate());
 	Templates.AddItem(CreateModifyStrategyObjectivesTemplate());
+	Templates.AddItem(CreateModifyCharactersTemplate());
 	Templates.AddItem(CreateModifyCovertActionsTemplate());
 	Templates.AddItem(CreateModifyCovertActionRisksTemplate());
 	Templates.AddItem(CreateModifyDarkEventsTemplate());
@@ -344,6 +347,15 @@ static function X2LWTemplateModTemplate CreateModifyStrategyObjectivesTemplate()
 	local X2LWTemplateModTemplate Template;
 
 	`CREATE_X2TEMPLATE(class'X2LWObjectivesModTemplate', Template, 'UpdateObjectives');
+	return Template;
+}
+
+// Update existing character templates
+static function X2LWTemplateModTemplate CreateModifyCharactersTemplate()
+{
+	local X2LWTemplateModTemplate Template;
+
+	`CREATE_X2TEMPLATE(class'X2LWCharactersModTemplate', Template, 'UpdateCharacters');
 	return Template;
 }
 
@@ -630,9 +642,16 @@ static function GenerateRescueSoldierRewardFixed(XComGameState_Reward RewardStat
 	}
 	CapturedSoldierRef = class'X2StrategyElement_RandomizedSoldierRewards'.static.PickCapturedSoldier(ChosenCapturedSoldiers);
 
+	// This is for debugging
+	if (CapturedSoldiers.Length == 0)
+	{
+		`LWTrace("[RescueSoldier] BUG!! No captured soldiers available to be rescued (GenerateRescueSoldierRewardFixed)");
+	}
+
 	UnitState = XComGameState_Unit(`XCOMHISTORY.GetGameStateForObjectID(CapturedSoldierRef.ObjectID));
 	RewardState.RewardObjectReference = UnitState.GetReference();
 	RewardState.RewardString = UnitState.GetName(eNameType_RankFull);
+	`LWTrace("[RescueSoldier] Adding " $ RewardState.RewardString $ " as a rescue reward (GenerateRescueSoldierRewardFixed)");
 }
 
 // Update QuestItemTemplates to include the new _LW MissionTypes
@@ -720,8 +739,10 @@ function ModifyGrenadeEffects(X2ItemTemplate Template, int Difficulty)
 	local X2Condition_UnitProperty	UnitCondition;
 	local X2Effect_PersistentStatChange DisorientedEffect;
 	GrenadeTemplate = X2GrenadeTemplate(Template);
+
 	if(GrenadeTemplate == none)
 		return;
+
 	switch(GrenadeTemplate.DataName)
 	{
 		case 'FlashbangGrenade':
@@ -782,14 +803,20 @@ function ModifyGrenadeEffects(X2ItemTemplate Template, int Difficulty)
 			break;
 		case 'EMPGrenade':
 		case 'EMPGrenadeMk2':
-
-			UnitCondition = new class'X2Condition_UnitProperty';
-			UnitCondition.ExcludeOrganic = true;
-			UnitCondition.IncludeWeakAgainstTechLikeRobot = true;
-			UnitCondition.ExcludeFriendlyToSource = false;
-	
 			DisorientedEffect = class'X2StatusEffects'.static.CreateDisorientedStatusEffect();
-			DisorientedEffect.TargetConditions.AddItem(UnitCondition);
+			for (k = 0; k < DisorientedEffect.TargetConditions.Length; k++)
+			{
+				// Modify the existing condition, which applies only to organics
+				UnitCondition = X2Condition_UnitProperty(DisorientedEffect.TargetConditions[k]);
+				if (UnitCondition != none)
+				{
+					UnitCondition.ExcludeOrganic = true;
+					UnitCondition.ExcludeRobotic = false;
+					UnitCondition.IncludeWeakAgainstTechLikeRobot = true;
+					break;
+				}
+			}
+
 			GrenadeTemplate.ThrownGrenadeEffects.AddItem(DisorientedEffect);
 			GrenadeTemplate.LaunchedGrenadeEffects.AddItem(DisorientedEffect);
 			break;
@@ -809,103 +836,57 @@ static function X2LWTemplateModTemplate CreateModifyAbilitiesGeneralTemplate()
    return Template;
 }
 
-static function string GetIconColorByActionPoints (X2AbilityTemplate Template)
+static function string GetIconColorByActionPoints(X2AbilityTemplate Template)
 {
-	local int k, k2;
+	local X2AbilityCost_ActionPoints ActionPoints;
+	local int k, k2, ActionPointCost;
 	local bool pass, found;
-	local X2AbilityCost_ActionPoints        ActionPoints;
-	local string AbilityIconColor;
+	local bool IsObjectiveAbility, IsFree, IsTurnEnding, IsPsionic;
+	local string BackgroundColor, ForegroundColor;
 
-	AbilityIconColor = "";
 	for (k = 0; k < Template.AbilityCosts.Length; ++k)
 	{   
 		ActionPoints = X2AbilityCost_ActionPoints(Template.AbilityCosts[k]);
 		if (ActionPoints != none)
 		{
 			Found = true;
+			ActionPointCost = ActionPoints.iNumPoints;
+			IsTurnEnding = ActionPoints.bConsumeAllPoints;
+			IsFree = ActionPoints.bFreeCost;
+
 			if (Template.AbilityIconColor == "53b45e") //Objective
 			{
-				AbilityIconColor = default.ICON_COLOR_OBJECTIVE; // orange
+				IsObjectiveAbility = true; // orange
 			} 
-			else 
+			else  if (Template.AbilitySourceName == 'eAbilitySource_Psionic')
 			{
-				if (Template.AbilitySourceName == 'eAbilitySource_Psionic') 
-				{
-					if (ActionPoints.iNumPoints >= 2) 
-					{
-						AbilityIconColor = default.ICON_COLOR_PSIONIC_2;
-					}
-					else 
-					{
-						if (ActionPoints.bConsumeAllPoints) 
-						{
-							AbilityIconColor = default.ICON_COLOR_PSIONIC_END;
-						} 
-						else 
-						{
-							if (ActionPoints.iNumPoints == 1 && !ActionPoints.bFreeCost)
-							{
-								AbilityIconColor = default.ICON_COLOR_PSIONIC_1; // light lavender
-							}
-							else
-							{   
-								AbilityIconColor = default.ICON_COLOR_PSIONIC_FREE; // lavender-white
-							}
-						}
-					}
-				} 
-				else 
-				{
-					if (ActionPoints.iNumPoints >= 2) 
-					{
-						AbilityIconColor = default.ICON_COLOR_2; // yellow
-					}
-					else 
-					{
-						if (ActionPoints.bConsumeAllPoints) 
-						{
-							AbilityIconColor = default.ICON_COLOR_END; // cyan
-						} 
-						else 
-						{
-							if (ActionPoints.iNumPoints == 1 && !ActionPoints.bFreeCost)
-							{
-								AbilityIconColor = default.ICON_COLOR_1; // white
-							}
-							else
-							{
-								AbilityIconColor = default.ICON_COLOR_FREE; //green
-							}
-						}
-					}
-				}
+				IsPsionic = true;
 			}
 			break;
 		}
 	}
 	if (!found)
 	{
-		pass= false;
+		pass = false;
 		for (k2 = 0; k2 < Template.AbilityTriggers.Length; k2++)
 		{
-		   if(Template.AbilityTriggers[k2].IsA('X2AbilityTrigger_PlayerInput'))
+		   if (Template.AbilityTriggers[k2].IsA('X2AbilityTrigger_PlayerInput'))
 			{
 				pass = true;
 			}
 		}
 		if (pass)
 		{
+			IsFree = true;
 			if (Template.AbilitySourceName == 'eAbilitySource_Psionic') 
 			{
-				AbilityIconColor = default.ICON_COLOR_PSIONIC_FREE;
-			}
-			else
-			{
-				AbilityIconColor = default.ICON_COLOR_FREE;
+				IsPsionic = true;
 			}
 		}
 	}
-	return AbilityIconColor;
+
+	class'Utilities_LW'.static.GetAbilityIconColor(IsObjectiveAbility, IsFree, IsPsionic, IsTurnEnding, ActionPointCost, BackgroundColor, ForegroundColor);
+	return BackgroundColor;
 }
 
 function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
@@ -914,14 +895,14 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 	local X2Condition_UnitEffects           UnitEffects;
 	local X2AbilityToHitCalc_StandardAim    StandardAim;
 	local X2AbilityCharges_RevivalProtocol  RPCharges;
-	local X2Condition_UnitInventory         InventoryCondition, InventoryCondition2;
+	local X2Condition_UnitInventory         InventoryCondition2;
 	local X2Condition_UnitEffects           SuppressedCondition, UnitEffectsCondition, NotHaywiredCondition;
 	local int                               k;
 	local X2AbilityCost_Ammo                AmmoCost;
 	local X2AbilityCost_ActionPoints        ActionPointCost;
 	local X2EFfect_HuntersInstinctDamage_LW DamageModifier;
 	local X2AbilityCooldown                 Cooldown;
-	local X2AbilityCost_QuickdrawActionPoints_LW    QuickdrawActionPointCost;
+	local X2AbilityCost_QuickdrawActionPoints	QuickdrawActionPointCost;
 	local X2Effect_Squadsight               Squadsight;
 	local X2Effect_ToHitModifier            ToHitModifier;
 	local X2Effect_Persistent               Effect, PersistentEffect, HaywiredEffect;
@@ -944,10 +925,11 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 	local X2Effect_ApplyWeaponDamage        WeaponDamageEffect;
 	local X2Condition_AbilityProperty		AbilityCondition;
 	local X2Effect_RemoveEffectsByDamageType RemoveEffects;
-	local name 								HealType;
+	local name 								HealType, AbilityName;
 	local X2Effect_SharpshooterAim_LW   	AimEffect;
 	local X2AbilityCooldown_Shared			CooldownShared;
 	local X2AbilityMultiTarget_Cone			ConeMultiTarget;
+	local X2AbilityCooldown_AllInstances 	AllInstancesCooldown;
 
 	// WOTC TODO: Trying this out. Should be put somewhere more appropriate.
 	if (Template.DataName == 'ReflexShotModifier')
@@ -990,11 +972,12 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 
 	if (Template.DataName == 'HailofBullets')
 	{
+		/*
 		InventoryCondition = new class'X2Condition_UnitInventory';
 		InventoryCondition.RelevantSlot=eInvSlot_PrimaryWeapon;
 		InventoryCondition.ExcludeWeaponCategory = 'shotgun';
 		Template.AbilityShooterConditions.AddItem(InventoryCondition);
-	
+		*/
 		InventoryCondition2 = new class'X2Condition_UnitInventory';
 		InventoryCondition2.RelevantSlot=eInvSlot_PrimaryWeapon;
 		InventoryCondition2.ExcludeWeaponCategory = 'sniper_rifle';
@@ -1124,7 +1107,7 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 	}
 
 		
-	if (Template.DataName == 'Stasis')
+	if (Template.DataName == 'Stasis' || Template.DataName == 'PriestStasis')
 	{
 		UnitPropertyCondition = new class 'X2Condition_UnitProperty';
 		UnitPropertyCondition.ExcludeLargeUnits = true;
@@ -1558,9 +1541,13 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 
 	if (Template.DataName == 'ThrowGrenade')
 	{
-		Cooldown = new class'X2AbilityCooldown_AllInstances';
-		Cooldown.iNumTurns = default.THROW_GRENADE_COOLDOWN;
-		Template.AbilityCooldown = Cooldown;
+		AllInstancesCooldown = new class'X2AbilityCooldown_AllInstances';
+		foreach default.ABILITIES_TO_DISABLE_GRENADE_COOLDOWN(AbilityName)
+		{
+			AllInstancesCooldown.ExcludeIfTheSoldierHasAbility.AddItem(AbilityName);
+		}
+		AllInstancesCooldown.iNumTurns = default.THROW_GRENADE_COOLDOWN;
+		Template.AbilityCooldown = AllInstancesCooldown;
 		X2AbilityToHitCalc_StandardAim(Template.AbilityToHitCalc).bGuaranteedHit = true;
 	}
 
@@ -1570,16 +1557,30 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 		Template.TargetingMethod = class'X2TargetingMethod_ConditionalBlasterLauncher';
 	}
 
-	if (Template.DataName == 'PistolStandardShot')
+	switch (Template.DataName)
 	{
-		Template.AbilityCosts.length = 0;
-		QuickdrawActionPointCost = new class'X2AbilityCost_QuickdrawActionPoints_LW';
-		QuickdrawActionPointCost.iNumPoints = 1;
-		QuickdrawActionPointCost.bConsumeAllPoints = true;
-		Template.AbilityCosts.AddItem(QuickdrawActionPointCost);
+	case 'PistolStandardShot':
+		// Update pistol shot so that Quickdraw makes it non turn ending. This is
+		// required because the default quickdraw action point cost implementation
+		// checks whether the source weapon is in the secondary weapon slot.
+		for (k = 0; k < Template.AbilityCosts.Length; k++)
+		{
+			QuickdrawActionPointCost = X2AbilityCost_QuickdrawActionPoints(Template.AbilityCosts[k]);
+			if (QuickdrawActionPointCost != none)
+			{
+				QuickdrawActionPointCost.DoNotConsumeAllSoldierAbilities.AddItem('Quickdraw');
+			}
+		}
+
 		AmmoCost = new class'X2AbilityCost_Ammo';
 		AmmoCost.iAmmo = 1;
 		Template.AbilityCosts.AddItem(AmmoCost);
+		// Deliberate fall through
+
+	case 'PistolOverwatch':
+		// Make sure the pistol abilities can't have duplicate sources
+		Template.bUniqueSource = true;
+		break;
 	}
 
 	if (Template.DataName == 'Faceoff')
@@ -1767,7 +1768,11 @@ function ModifyAbilitiesGeneral(X2AbilityTemplate Template, int Difficulty)
 			case 'Bombard':
 				Template.AbilityIconColor = default.ICON_COLOR_END; break;
 			default:
-				Template.AbilityIconColor = GetIconColorByActionPoints (Template); break;
+				if (Template.AbilityIconColor != "Variable")
+				{
+					Template.AbilityIconColor = GetIconColorByActionPoints(Template);
+				}
+				break;
 		}
 	}
 	
@@ -1925,16 +1930,18 @@ function SwapExplosiveFalloffItem(X2ItemTemplate Template, int Difficulty)
 			break;
 		}
 	}
-	if (ThrownDamageEffect != none || LaunchedDamageEffect != none &&
+	if ((ThrownDamageEffect != none || LaunchedDamageEffect != none) &&
 		ClassIsChildOf(class'X2Effect_ApplyExplosiveFalloffWeaponDamage', ThrownDamageEffect.Class))
 	{
+		`LWTrace("Applying explosive falloff to item " $ Template.DataName);
+
 		FalloffDamageEffect = new class'X2Effect_ApplyExplosiveFalloffWeaponDamage' (ThrownDamageEffect);
 
 		//Falloff-specific settings
 		FalloffDamageEffect.UnitDamageAbilityExclusions.AddItem('TandemWarheads'); // if has any of these abilities, skip any falloff
 		FalloffDamageEffect.EnvironmentDamageAbilityExclusions.AddItem('CombatEngineer'); // if has any of these abilities, skip any falloff
-		FalloffDamageEffect.UnitDamageSteps=default.UnitDamageSteps;
-		FalloffDamageEffect.EnvironmentDamageSteps=default.EnvironmentDamageSteps;
+		FalloffDamageEffect.UnitDamageSteps = default.UnitDamageSteps;
+		FalloffDamageEffect.EnvironmentDamageSteps = default.EnvironmentDamageSteps;
 
 		if (ThrownDamageEffect != none)
 		{
@@ -1950,7 +1957,6 @@ function SwapExplosiveFalloffItem(X2ItemTemplate Template, int Difficulty)
 		}
 	}
 }
-
 
 function SwapExplosiveFalloffAbility(X2AbilityTemplate Template, int Difficulty)
 {
@@ -2124,6 +2130,16 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 			Template.Abilities.AddItem('Formidable');
 		case 'AdvPurifierM2':
 			Template.Abilities.AddItem('Burnout');
+			Template.Abilities.AddItem('PhosphorusPassive');
+
+			Template.strPawnArchetypes.RemoveItem("GameUnit_AdvPurifier.ARC_GameUnit_AdvPurifierM2_M");
+			Template.strPawnArchetypes.RemoveItem("GameUnit_AdvPurifier.ARC_GameUnit_AdvPurifierM2_F");
+			Template.strPawnArchetypes.RemoveItem("GameUnit_AdvPurifier.ARC_GameUnit_AdvPurifierM3_M");
+			Template.strPawnArchetypes.RemoveItem("GameUnit_AdvPurifier.ARC_GameUnit_AdvPurifierM3_F");
+			Template.strPawnArchetypes.AddItem("GameUnit_AdvPurifier_Rusty.Archetypes.ARC_GameUnit_AdvPurifierRusty_F");
+			Template.strPawnArchetypes.AddItem("GameUnit_AdvPurifier_Rusty.Archetypes.ARC_GameUnit_AdvPurifierRusty_M");
+		case 'AdvPurifierM1':
+			Template.strScamperBT = "ScamperRoot_Purifier";
 			break;
 		case 'SpectreM2':
 			Template.Abilities.AddItem('LowProfile');
@@ -2144,10 +2160,11 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
  			Template.ImmuneTypes.AddItem('HeavyMental'); //CHOSEN CHANGES
 			break;
 		//CHOSEN CHANGES
+		case 'TemplarSoldier':
+		//	Template.bCanTakeCover = false;
 		case 'Soldier': 
 		case 'ReaperSoldier':
 		case 'SkirmisherSoldier':
-		case 'TemplarSoldier':
 			Template.Abilities.AddItem('MC_Stock_Strike');
 			Template.Abilities.AddItem('GetUp');
 			Template.CharacterGroupName = 'XCOMSoldier';
@@ -2214,9 +2231,10 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 		Template.Abilities.AddItem('CloseCombatSpecialist');
 		Template.Abilities.AddItem('GrazingFire');
 		Template.Abilities.AddItem('WarlockReaction');
-		Template.Abilities.AddItem('AmmoDump_LW');
+		//Template.Abilities.AddItem('AmmoDump_LW');
 		Template.Abilities.AddItem('ChosenCritImmune');
 		Template.Abilities.AddItem('ChosenImmunitiesPassive');
+		Template.Abilities.AddItem('ChosenLootAbility');
 
 		Template.InitiativePriority = -100;
 
@@ -2243,6 +2261,10 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 		Template.Abilities.AddItem('ChosenImmuneMelee');
 		Template.Abilities.AddItem('ReadyForAnything');
 		Template.Abilities.AddItem('ChosenImmunitiesPassive');
+		Template.Abilities.AddItem('FreeGrenades');
+		Template.Abilities.AddItem('Infighter');
+		Template.Abilities.AddItem('Disabler');
+		Template.Abilities.AddItem('ChosenLootAbility');
 
 		Template.ImmuneTypes.AddItem('Frost');
 		Template.InitiativePriority = -100;
@@ -2256,7 +2278,7 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 		Template.Abilities.RemoveItem('BendingReed');
 
 		Template.Abilities.AddItem('ChosenCritImmune');
-		Template.Abilities.AddItem('CombatReadiness');
+		Template.Abilities.AddItem('Banzai_LW');
 		Template.Abilities.AddItem('ChosenKidnap');
 		Template.Abilities.AddItem('AssassinReaction');
 		Template.Abilities.AddItem('BloodThirst_LW');
@@ -2264,8 +2286,9 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 		Template.Abilities.AddItem('FreeGrenades');
 		Template.Abilities.AddItem('ChosenImmunitiesPassive');
 		Template.Abilities.AddItem('AssassinSlash_LW');
-		Template.Abilities.AddItem('InstantReactionTime');
-		Template.Abilities.AddItem('Brawler');
+		Template.Abilities.AddItem('ImpactCompensation_LW');
+		Template.Abilities.AddItem('Infighter');
+		Template.Abilities.AddItem('ChosenLootAbility');
 
 		Template.ImmuneTypes.AddItem('Frost');
 		Template.InitiativePriority = -100;
@@ -2315,6 +2338,7 @@ function GeneralCharacterMod(X2CharacterTemplate Template, int Difficulty)
 	}
 
 	Template.Abilities.AddItem('MindControlCleanse');
+	Template.Abilities.AddItem('SmokeFlankingCritProtection');
 
 	// LWOTC Grant reaction fire a bonus against units in cover (the
 	// effect applies to the *target* of such shots) unless Revert
@@ -2354,8 +2378,9 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 	WeaponTemplate = X2WeaponTemplate(Template);
 	if (WeaponTemplate != none)
 	{
-		// Pistols don't have PistolStandardShot for some reason. Add it here.
-		if (WeaponTemplate.WeaponCat == 'pistol')
+		// Pistols don't have PistolStandardShot because it was originally just an
+		// ability for Sharpshooters. Add it here if the LWOTC pistol slot is enabled.
+		if (WeaponTemplate.WeaponCat == 'pistol' && !class'CHItemSlot_PistolSlot_LW'.default.DISABLE_LW_PISTOL_SLOT)
 			WeaponTemplate.Abilities.AddItem('PistolStandardShot');
 
 		// substitute cannon range table
@@ -2394,9 +2419,9 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 			WeaponTemplate.Abilities.AddItem('PriestPsiMindControl');
 			break;
 		case 'AdvPriestM3_PsiAmp':
-			WeaponTemplate.Abilities.AddItem('Bastion');
+			WeaponTemplate.Abilities.AddItem('Solace');
 		case 'AdvPriestM2_PsiAmp':
-			WeaponTemplate.Abilities.AddItem('Fortress');
+			WeaponTemplate.Abilities.AddItem('MindShield');
 			break;
 		case 'AdvPurifierFlamethrower':
 			WeaponTemplate.iIdealRange = 7;
@@ -2447,6 +2472,7 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 		case 'ChosenRifle_XCOM':
 			WeaponTemplate.Abilities.AddItem('OverbearingSuperiority_LW');
 			WeaponTemplate.OnAcquiredFn = none;
+			WeaponTemplate.SetUIStatMarkup(class'XLocalizedData'.default.AimLabel, eStat_Offense, class'X2Item_XpackWeapons'.default.CHOSENRIFLE_XCOM_AIM);
 			break;
 		case 'ChosenSniperRifle_XCOM':
 			WeaponTemplate.iTypicalActionCost = 2;
@@ -2454,6 +2480,8 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 			WeaponTemplate.Abilities.RemoveItem('Reload');
 			WeaponTemplate.Abilities.AddItem('ComplexReload_LW'); 
 			WeaponTemplate.OnAcquiredFn = none;
+			WeaponTemplate.SetUIStatMarkup(class'XLocalizedData'.default.AimLabel, eStat_Offense, class'X2Item_XpackWeapons'.default.CHOSENSNIPERRIFLE_XCOM_AIM);
+			WeaponTemplate.SetUIStatMarkup(class'XLocalizedData'.default.CritLabel, eStat_CritChance, class'X2Item_XpackWeapons'.default.CHOSENSNIPERRIFLE_XCOM_CRITCHANCE);
 			break;
 		case 'ChosenSword_XCOM':
 			WeaponTemplate.Abilities.AddItem('XCOMBloodThirst_LW');
@@ -2470,6 +2498,7 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 		case 'ChosenShotgun_XCOM':
 			WeaponTemplate.Abilities.AddItem('Brawler');
 			WeaponTemplate.Abilities.AddItem('Vampirism_LW');
+			WeaponTemplate.Abilities.AddItem('ImpactCompensation_LW');
 			WeaponTemplate.OnAcquiredFn = none;
 			break;
 		case 'ChosenSniperPistol_XCOM':
@@ -2648,6 +2677,10 @@ function ReconfigGear(X2ItemTemplate Template, int Difficulty)
 			case 'CorpseAdventShieldbearer':
 			case 'CorpseDrone':
 			case 'CorpseMutonElite':
+			case 'CorpseSpectre':
+			case 'CorpseAdventPurifier':
+			case 'CorpseAdventPriest':
+			case 'CorpseTheLost':
 				Template.LeavesExplosiveRemains = false;
 				break;
 			default:
@@ -3267,6 +3300,11 @@ function RewireTechTree(X2StrategyElementTemplate Template, int Difficulty)
 			TechTemplate.Cost.ResourceCosts.AddItem(Resources);
 		}
 
+		if (TechTemplate.DataName == 'ResistanceRadio')
+		{
+			TechTemplate.ResearchCompletedFn = ActivateContinentBonuses;
+		}
+
 		if (TechTemplate.DataName == 'SpiderSuit')
 			TechTemplate.bRepeatable = false;
 		if (TechTemplate.DataName == 'ExoSuit')
@@ -3404,6 +3442,29 @@ function RewireTechTree(X2StrategyElementTemplate Template, int Difficulty)
 				}
 			}
 		}
+	}
+}
+
+// Activates all eligible continent bonuses that aren't already
+// active. Activation of a bonus normally happens when a region is
+// contacted and there are sufficient radio relays on the continent,
+//  but we prevent this from happening
+// (see X2EventListener_StrategyMap.HandleContinentBonusActivation())
+// if Resistance Radio hasn't first been researched. This is a follow
+// up for those regions affected by blocked bonus activation.
+static function ActivateContinentBonuses(XComGameState NewGameState, XComGameState_Tech TechState)
+{
+	local XComGameStateHistory History;
+	local XComGameState_Continent ContinentState;
+
+	History = `XCOMHISTORY;
+
+	foreach History.IterateByClassType(class'XComGameState_Continent', ContinentState)
+	{
+		// This will activate or deactivate the continent bonus
+		// depending on whether all the requirements have been met
+		// or not.
+		ContinentState.HandleRegionResistanceLevelChange(NewGameState);
 	}
 }
 

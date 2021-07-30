@@ -9,6 +9,8 @@ var config int RECKONING_LW_COOLDOWN;
 var config int RECKONING_LW_SLASH_COOLDOWN;
 var config int MANUAL_OVERRIDE_COOLDOWN;
 var config int REFLEX_COOLDOWN;
+var config int SKIRMISHER_INTERRUPT_COOLDOWN;
+var config int BATTLEFIELD_AWARENESS_COOLDOWN;
 
 static function array<X2DataTemplate> CreateTemplates()
 {
@@ -22,7 +24,11 @@ static function array<X2DataTemplate> CreateTemplates()
 	Templates.AddItem(AddManualOverride_LW());
 	Templates.AddItem(AddReflexTrigger());
 	Templates.AddItem(AddParkour());
-
+	Templates.AddItem(AddPackMaster());
+	Templates.AddItem(Interrupt_LW());
+	Templates.AddItem(BattlefieldAwareness());
+	Templates.AddItem(BattlefieldAwarenessPassive());
+	Templates.AddItem(BattlefieldAwarenessCooldown());
 	return Templates;
 }
 
@@ -41,7 +47,7 @@ static function X2AbilityTemplate AddReckoning_LW()
 
 	Template = PurePassive('Reckoning_LW', "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_Reckoning");
 	Template.AdditionalAbilities.AddItem('SkirmisherFleche');
-	Template.AdditionalAbilities.AddItem('SkirmisherSlash');
+	//Template.AdditionalAbilities.AddItem('SkirmisherSlash');
 
 	return Template;
 }
@@ -76,11 +82,11 @@ static function X2AbilityTemplate AddSkirmisherSlash()
 {
 	local X2AbilityTemplate                 Template;
 	local X2AbilityToHitCalc_StandardMelee  StandardMelee;
-	local X2AbilityCooldown					Cooldown;
+	//local X2AbilityCooldown					Cooldown;
 	local X2Effect_ApplyWeaponDamage        WeaponDamageEffect;
 	local array<name>                       SkipExclusions;
 	local X2Condition_UnitProperty			AdjacencyCondition;	
-
+	local X2AbilityCost_ActionPoints		ActionPointCost;
 	`CREATE_X2ABILITY_TEMPLATE(Template, 'SkirmisherSlash');
 
 	// Standard melee attack setup
@@ -98,12 +104,18 @@ static function X2AbilityTemplate AddSkirmisherSlash()
 	Template.bSkipFireAction = false;
 
 	// Costs one action and doesn't end turn
-	Template.AbilityCosts.AddItem(default.FreeActionCost);
+	ActionPointCost = new class'X2AbilityCost_ActionPoints';
+	ActionPointCost.iNumPoints = 1;
+	ActionPointCost.bConsumeAllPoints = false;
+	Template.AbilityCosts.AddItem(ActionPointCost);
 
+
+	/*
 	Cooldown = new class'X2AbilityCooldown';
 	Cooldown.iNumTurns = default.RECKONING_LW_SLASH_COOLDOWN;
 	Template.AbilityCooldown = Cooldown;
-	
+	*/
+
 	// Targetted melee attack against a single target
 	StandardMelee = new class'X2AbilityToHitCalc_StandardMelee';
 	Template.AbilityToHitCalc = StandardMelee;
@@ -261,5 +273,197 @@ static function X2AbilityTemplate AddParkour()
 
 	Template = PurePassive('Parkour_LW', "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_parkour", false, 'eAbilitySource_Perk');
 	Template.bCrossClassEligible = false;
+	return Template;
+}
+
+
+
+//this ability grants the unit +1 charge for each Item in a utility slot AND the grenade slot
+static function X2AbilityTemplate AddPackMaster()
+{
+	local X2AbilityTemplate						Template;
+	local X2Effect_PackMaster_LW				FullKitEffect;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'PackMaster_LW');
+	Template.IconImage = "img:///UILibrary_LW_PerkPack.LW_AbilityFullKit";
+	Template.AbilitySourceName = 'eAbilitySource_Perk';
+	Template.eAbilityIconBehaviorHUD = EAbilityIconBehavior_NeverShow;
+	Template.Hostility = eHostility_Neutral;
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+	Template.AbilityTriggers.AddItem(default.UnitPostBeginPlayTrigger);
+	Template.bIsPassive = true;
+	FullKitEffect = new class 'X2Effect_PackMaster_LW';
+	FullKitEffect.BuildPersistentEffect (1, true, false);
+	FullKitEffect.SetDisplayInfo(ePerkBuff_Passive, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,,Template.AbilitySourceName);
+	Template.AddTargetEffect(FullKitEffect);
+	Template.bCrossClassEligible = true;
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+
+	return Template;
+}
+
+static function X2AbilityTemplate Interrupt_LW()
+{
+	local X2AbilityTemplate				Template;
+	local X2AbilityCost_ActionPoints	ActionPointCost;
+	local X2Effect_SkirmisherInterrupt_LW			BattlelordEffect;
+	local X2Condition_UnitEffects	SuppressedCondition;
+	local X2AbilityCooldown	Cooldown;
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'SkirmisherInterrupt_LW');
+
+	
+	Template.IconImage = "img:///UILibrary_XPACK_Common.PerkIcons.UIPerk_Interrupt";
+	Template.AbilitySourceName = 'eAbilitySource_Perk';
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_AlwaysShow;
+	Template.ShotHUDPriority = class'UIUtilities_Tactical'.const.OVERWATCH_PRIORITY;
+	Template.Hostility = eHostility_Neutral;
+
+	Cooldown = new class'X2AbilityCooldown';
+	Cooldown.iNumTurns = default.SKIRMISHER_INTERRUPT_COOLDOWN;
+	Template.AbilityCooldown = Cooldown;
+
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+	Template.AbilityTriggers.AddItem(default.PlayerInputTrigger);
+
+	ActionPointCost = new class'X2AbilityCost_ActionPoints';
+	ActionPointCost.iNumPoints = 1;
+	ActionPointCost.bFreeCost = true;
+	ActionPointCost.AllowedTypes.RemoveItem(class'X2CharacterTemplateManager'.default.SkirmisherInterruptActionPoint);
+	Template.AbilityCosts.AddItem(ActionPointCost);
+
+	BattlelordEffect = new class'X2Effect_SkirmisherInterrupt_LW';
+	BattlelordEffect.BuildPersistentEffect(1, false, , , eGameRule_PlayerTurnBegin);
+	BattlelordEffect.SetDisplayInfo(ePerkBuff_Bonus, Template.LocFriendlyName, Template.LocLongDescription, Template.IconImage, true, , Template.AbilitySourceName);
+	Template.AddTargetEffect(BattlelordEffect);
+
+	SuppressedCondition = new class'X2Condition_UnitEffects';
+	SuppressedCondition.AddExcludeEffect(class'X2Effect_Suppression'.default.EffectName, 'AA_UnitIsSuppressed');
+	SuppressedCondition.AddExcludeEffect(class'X2Effect_SkirmisherInterrupt_LW'.default.EffectName, 'AA_AbilityUnavailable');
+	SuppressedCondition.AddExcludeEffect(class'X2Effect_Battlelord'.default.EffectName, 'AA_AbilityUnavailable');
+	Template.AbilityShooterConditions.AddItem(SuppressedCondition);
+
+
+	Template.AbilityShooterConditions.AddItem(default.LivingShooterProperty);
+	Template.AddShooterEffectExclusions();
+
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+
+	Template.bDisplayInUITooltip = false;
+	Template.bDisplayInUITacticalText = false;
+	Template.AbilityConfirmSound = "Unreal2DSounds_OverWatch";
+
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+	Template.bSkipFireAction = true;
+	Template.bShowActivation = true;
+	Template.CinescriptCameraType = "Overwatch";
+
+//BEGIN AUTOGENERATED CODE: Template Overrides 'Battlelord'
+	Template.ActivationSpeech = 'Interrupt';
+//END AUTOGENERATED CODE: Template Overrides 'Battlelord'
+
+	return Template;
+}
+
+static function X2AbilityTemplate BattlefieldAwareness()
+{
+	local X2AbilityTemplate						Template;
+	local X2AbilityTrigger_EventListener		EventListenerTrigger;
+	local X2Effect_BattlefieldAwareness	Effect;
+	local X2Condition_UnitEffects EffectsCondition;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'BattlefieldAwareness');
+//BEGIN AUTOGENERATED CODE: Template Overrides 'FullThrottle'
+	Template.IconImage = "img:///UILibrary_XPerkIconPack.UIPerk_panic_move";
+//END AUTOGENERATED CODE: Template Overrides 'FullThrottle'
+	Template.bShowActivation = true;
+	EffectsCondition = new class'X2Condition_UnitEffects';
+	EffectsCondition.AddExcludeEffect(class'X2Effect_BattlefieldAwarenessCooldown'.default.EffectName, 'AA_AbilityUnavailable');
+	Template.AbilityShooterConditions.AddItem(EffectsCondition);
+
+
+	Template.AbilitySourceName = 'eAbilitySource_Perk';
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_NeverShow;
+	Template.Hostility = eHostility_Neutral;
+
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+	
+	EventListenerTrigger = new class'X2AbilityTrigger_EventListener';
+	EventListenerTrigger.ListenerData.Deferral = ELD_OnStateSubmitted;
+	EventListenerTrigger.ListenerData.EventID = 'KillMail';
+	EventListenerTrigger.ListenerData.Filter = eFilter_Unit;
+	EventListenerTrigger.ListenerData.EventFn = class'XComGameState_Ability'.static.AbilityTriggerEventListener_Self;
+	Template.AbilityTriggers.AddItem(EventListenerTrigger);
+
+	Effect = new class'X2Effect_BattlefieldAwareness';
+	Effect.EffectName = 'BattlefieldAwareness';
+	Effect.BuildPersistentEffect(1,false,true,,eGameRule_PlayerTurnBegin);
+	Effect.SetDisplayInfo(ePerkBuff_Bonus, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,,Template.AbilitySourceName);
+	Effect.DuplicateResponse = eDupe_Ignore;
+	Template.AddTargetEffect(Effect);
+
+	Template.bSkipFireAction = true;
+	Template.bShowActivation = true;
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+	Template.AdditionalAbilities.AddItem('BattlefieldAwarenessPassive');
+	Template.AdditionalAbilities.AddItem('BattlefieldAwarenessCooldown');
+	
+
+	return Template;
+}
+
+
+
+static function X2AbilityTemplate BattlefieldAwarenessPassive()
+{
+	local X2AbilityTemplate		Template;
+
+	Template = PurePassive('BattlefieldAwarenessPassive', "img:///UILibrary_XPerkIconPack.UIPerk_panic_move", , 'eAbilitySource_Perk');
+
+	return Template;
+}
+
+
+static function X2AbilityTemplate BattlefieldAwarenessCooldown()
+{
+	local X2AbilityTemplate						Template;
+	local X2AbilityTrigger_EventListener		EventListenerTrigger;
+	local X2Effect_BattlefieldAwarenessCooldown	BattlefieldAwarenessCooldown;
+
+	`CREATE_X2ABILITY_TEMPLATE(Template, 'BattlefieldAwarenessCooldown');
+//BEGIN AUTOGENERATED CODE: Template Overrides 'FullThrottle'
+	Template.IconImage = "img:///UILibrary_XPerkIconPack.UIPerk_panic_move";
+//END AUTOGENERATED CODE: Template Overrides 'FullThrottle'
+	Template.bShowActivation = true;
+
+	Template.AbilitySourceName = 'eAbilitySource_Perk';
+	Template.eAbilityIconBehaviorHUD = eAbilityIconBehavior_NeverShow;
+	Template.Hostility = eHostility_Neutral;
+
+	Template.AbilityToHitCalc = default.DeadEye;
+	Template.AbilityTargetStyle = default.SelfTarget;
+	
+	EventListenerTrigger = new class'X2AbilityTrigger_EventListener';
+	EventListenerTrigger.ListenerData.Deferral = ELD_OnStateSubmitted;
+	EventListenerTrigger.ListenerData.EventID = 'BattlefieldAwarenessTriggered';
+	EventListenerTrigger.ListenerData.Filter = eFilter_Unit;
+	EventListenerTrigger.ListenerData.EventFn = class'XComGameState_Ability'.static.AbilityTriggerEventListener_Self;
+	Template.AbilityTriggers.AddItem(EventListenerTrigger);
+
+	BattlefieldAwarenessCooldown = new class 'X2Effect_BattlefieldAwarenessCooldown';
+    BattlefieldAwarenessCooldown.BuildPersistentEffect(default.BATTLEFIELD_AWARENESS_COOLDOWN,false,true,,eGameRule_PlayerTurnEnd);
+	BattlefieldAwarenessCooldown.SetDisplayInfo(ePerkBuff_Penalty, Template.LocFriendlyName, Template.GetMyLongDescription(), Template.IconImage, true,,Template.AbilitySourceName);
+	Template.AddTargetEffect(BattlefieldAwarenessCooldown);
+
+	Template.bSkipFireAction = true;
+	Template.bShowActivation = true;
+	Template.BuildNewGameStateFn = TypicalAbility_BuildGameState;
+	Template.BuildVisualizationFn = TypicalAbility_BuildVisualization;
+
 	return Template;
 }

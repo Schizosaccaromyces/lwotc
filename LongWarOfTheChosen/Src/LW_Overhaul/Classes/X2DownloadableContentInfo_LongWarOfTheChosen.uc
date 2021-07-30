@@ -106,6 +106,9 @@ var config array<int> MIN_FL_FOR_LOST;
 // Thresholds for region strength translating to larger Alien Ruler pod size.
 var config array<int> RULER_POD_SIZE_ALERT_THRESHOLDS;
 
+// Scaling multiplier for the Brute's pawn
+var config float BRUTE_SIZE_MULTIPLIER;
+
 // End data and data structures
 //-----------------------------
 
@@ -144,6 +147,12 @@ static event InstallNewCampaign(XComGameState StartState)
 	class'XComGameState_WorldRegion_LWStrategyAI'.static.InitializeRegionalAIs(StartState);
 	class'XComGameState_LWOverhaulOptions'.static.CreateModSettingsState_NewCampaign(class'XComGameState_LWOverhaulOptions', StartState);
 
+	// Save the second wave options, but only if we've actually started a new
+	// campaign (hence the check for UIShellDifficulty being open).
+	if (`SCREENSTACK != none && UIShellDifficulty(`SCREENSTACK.GetFirstInstanceOf(class'UIShellDifficulty')) != none)
+	{
+		SaveSecondWaveOptions();
+	}
 
 	StartingRegionState = SetStartingLocationToStartingRegion(StartState);
 	UpdateLockAndLoadBonus(StartState);  // update XComHQ and Continent states to remove LockAndLoad bonus if it was selected
@@ -162,6 +171,7 @@ static event InstallNewCampaign(XComGameState StartState)
 
 static function OnPreCreateTemplates()
 {
+	`Log("Long War of the Chosen (LWOTC) version: " $ class'LWVersion'.static.GetVersionString());
 	PatchModClassOverrides();
 }
 
@@ -170,12 +180,21 @@ static function OnPreCreateTemplates()
 /// </summary>
 static event OnPostTemplatesCreated()
 {
+	local CHHelpers CHHelpersObj;
+
 	`Log(">>>> LW_Overhaul OnPostTemplates");
 	class'LWTemplateMods_Utilities'.static.UpdateTemplates();
 	UpdateWeaponAttachmentsForCoilgun();
 	UpdateFirstMissionTemplate();
 	AddObjectivesToParcels();
 	UpdateChosenActivities();
+	UpdateChosenSabotages();
+	CHHelpersObj = class'CHHelpers'.static.GetCDO();
+	if (CHHelpersObj == none)
+	{
+		return;
+	}
+	CHHelpersObj.AddOverrideAbilityIconColorsCallback(OverrideAbilityIconColors);
 }
 
 /// <summary>
@@ -224,7 +243,7 @@ static event OnLoadedSavedGameToStrategy()
 		
 	//Make sure the chosen are of appropriate level
 	AlienHQ = XComGameState_HeadquartersAlien(History.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersAlien'));
-	Forcelevel = AlienHQ.GetForceLevel();
+	Forcelevel = class'Utilities_LW'.static.GetLWForceLevel();
 	AllChosen = AlienHQ.GetAllChosen();
 
 	ChosenLevel = 3;
@@ -240,7 +259,13 @@ static event OnLoadedSavedGameToStrategy()
 	foreach AllChosen(ChosenState)
 	{
 		OldTacticalTag = ChosenState.GetMyTemplate().GetSpawningTag(ChosenState.Level);
-		Chosenstate.Level = ChosenLevel;
+
+		if (ChosenState.Level != ChosenLevel)
+		{
+			ChosenState = XComGameState_AdventChosen(NewGameState.ModifyStateObject(class'XComGameState_AdventChosen', ChosenState.ObjectID));
+			Chosenstate.Level = ChosenLevel;
+		}
+
 		NewTacticalTag = ChosenState.GetMyTemplate().GetSpawningTag(ChosenState.Level);
 		// Replace Old Tag with new Tag in missions
 		ChosenState.RemoveTacticalTagFromAllMissions(NewGameState, OldTacticalTag, NewTacticalTag);
@@ -293,6 +318,53 @@ static function PatchModClassOverrides()
 		LocalEngine.ModClassOverrides.AddItem(MCO);
 		`LWTrace(GetFuncName() @ "Adding Mod Class Override -" @ MCO.BaseGameClass @ MCO.ModClass);
 	}
+}
+
+static function SaveSecondWaveOptions()
+{	
+	local UIShellDifficulty ShellDifficultyUI;
+	local UIShellDifficultySW NewShellDifficultyUI;
+	local SecondWaveOption SWOption;
+	local SecondWaveOptionObject NewSWOption;
+	local SecondWavePersistentData PersistentData;
+	local PersistentSecondWaveOption PersistentOption;
+	local XComGameState_CampaignSettings CampaignSettingsState;
+
+	
+	ShellDifficultyUI = UIShellDifficulty(class'Engine'.static.FindClassDefaultObject("XComGame.UIShellDifficulty"));
+	NewShellDifficultyUI = UIShellDifficultySW(class'Engine'.static.FindClassDefaultObject("BetterSecondWaveSupport.UIShellDifficultySW"));
+	CampaignSettingsState = XComGameState_CampaignSettings(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_CampaignSettings'));
+
+	PersistentData = new class'SecondWavePersistentData';
+
+	// Clear existing data from INI first
+	PersistentData.SecondWaveOptionList.Length = 0;
+	PersistentData.SaveConfig();
+
+	// Save difficulty and beginner VO settings
+	PersistentData.IsDifficultySet = true;
+	PersistentData.Difficulty = CampaignSettingsState.DifficultySetting;
+	PersistentData.DisableBeginnerVO = CampaignSettingsState.bSuppressFirstTimeNarrative;
+
+	// Add base-game second wave options
+	foreach ShellDifficultyUI.SecondWaveOptions(SWOption)
+	{
+		PersistentOption.ID = SWOption.ID;
+		PersistentOption.IsChecked = CampaignSettingsState.SecondWaveOptions.Find(PersistentOption.ID) != INDEX_NONE;
+		PersistentData.SecondWaveOptionList.AddItem(PersistentOption);
+	}
+
+	// Add extra second wave options
+	foreach NewShellDifficultyUI.SecondWaveOptionsReal(NewSWOption)
+	{
+		PersistentOption.ID = NewSWOption.OptionData.ID;
+		PersistentOption.IsChecked = CampaignSettingsState.SecondWaveOptions.Find(PersistentOption.ID) != INDEX_NONE;
+		PersistentData.SecondWaveOptionList.AddItem(PersistentOption);
+	}
+
+	// Save the new second wave settings
+	`LWTrace("Saving second wave options");
+	PersistentData.SaveConfig();
 }
 
 static function XComGameState_WorldRegion SetStartingLocationToStartingRegion(XComGameState StartState)
@@ -1248,6 +1320,20 @@ static function PostReinforcementCreation(out name EncounterName, out PodSpawnIn
 {
 }
 
+// Increase the size of Lost Brutes (unless WWL is installed)
+static function UpdateAnimations(out array<AnimSet> CustomAnimSets, XComGameState_Unit UnitState, XComUnitPawn Pawn)
+{
+	if (Left(UnitState.GetMyTemplateName(), Len("TheLostBrute")) != "TheLostBrute")
+		return;
+
+	// No need to scale the Brute's pawn size if World War Lost is installed
+	// because we'll be using its dedicated Brute model.
+	if (class'Helpers_LW'.static.IsModInstalled("WorldWarLost"))
+		return;
+
+	Pawn.Mesh.SetScale(default.BRUTE_SIZE_MULTIPLIER);
+}
+
 // Use SLG hook to add infiltration modifiers to alien units
 static function FinalizeUnitAbilitiesForInit(XComGameState_Unit UnitState, out array<AbilitySetupData> SetupData, optional XComGameState StartState, optional XComGameState_Player PlayerState, optional bool bMultiplayerDisplay)
 {
@@ -1519,6 +1605,12 @@ static function AddObjectivesToParcels()
 				ParcelMgr.arrPlots[i].ObjectiveTags.AddItem("MediumPlot");
 			}
 
+			// Quick hack to enable Rendezvous maps for Ambush mission
+			if (ParcelMgr.arrPlots[i].ObjectiveTags.Length > 0 && ParcelMgr.arrPlots[i].ObjectiveTags[0] == "AvengerDefense")
+			{
+				ParcelMgr.arrPlots[i].ObjectiveTags.AddItem("CovertEscape");
+			}
+
 			// Exclude Sewer maps so that Tunnels don't dominate the map pool quite so hard.
 			if (PlotDef.strType == "Tunnels_Sewer")
 			{
@@ -1642,8 +1734,9 @@ static function MaybeAddChosenToMission(XComGameState StartState, XComGameState_
 	local XComGameState_HeadquartersAlien AlienHQ;
 	local array<XComGameState_AdventChosen> AllChosen;
 	local XComGameState_AdventChosen ChosenState;
-	local name ChosenSpawningTag, ChosenSpawningTagLWOTC;
+	local name ChosenSpawningTag, ChosenSpawningTagLWOTC, ChosenSpawningTagRemove;
 	local bool HasRulerOnMission;
+	local array <name> SpawningTags;
 
 	// Certain missions should just use vanilla Chosen behaviour, like the Chosen
 	// Avenger Defense
@@ -1675,14 +1768,19 @@ static function MaybeAddChosenToMission(XComGameState StartState, XComGameState_
 			ChosenSpawningTag = ChosenState.GetMyTemplate().GetSpawningTag(ChosenState.Level);
 			ChosenSpawningTagLWOTC = class'Helpers_LW'.static.GetChosenActiveMissionTag(ChosenState);
 
-			// Remove the tag if it's already attached to this mission. This is the only
+			// Remove All vanilla chosen tags if they are attached to this mission. This is the only
 			// place that should add Chosen tactical mission tags to the XCOM HQ. This
-			// basically prevents the base game from adding Chosen to missions.
-			XComHQ.TacticalGameplayTags.RemoveItem(ChosenSpawningTag);
+			// basically prevents the base game and other mods from adding Chosen to missions.
+			SpawningTags = ChosenState.GetMyTemplate().ChosenProgressionData.SpawningTags;
+			foreach SpawningTags(ChosenSpawningTagRemove)
+			{
+				XComHQ.TacticalGameplayTags.RemoveItem(ChosenSpawningTagRemove);
+			}
 
 			// Now add the appropriate tactical gameplay tag for this Chosen if the
 			// corresponding LWOTC-specific one is in the mission's tactical tags.
-			if (!HasRulerOnMission && MissionState.TacticalGameplayTags.Find(ChosenSpawningTagLWOTC) != INDEX_NONE)
+			if (!HasRulerOnMission && !ChosenState.bDefeated &&
+				MissionState.TacticalGameplayTags.Find(ChosenSpawningTagLWOTC) != INDEX_NONE)
 			{
 				XComHQ.TacticalGameplayTags.AddItem(ChosenSpawningTag);
 			}
@@ -2007,7 +2105,8 @@ static function bool CanAddItemToInventory_CH_Improved(
 		return CheckGameState == none;
 	}
 
-	if (Slot == eInvSlot_Pistol && WeaponTemplate.WeaponCat == 'pistol')
+	if (Slot == eInvSlot_Pistol && !class'CHItemSlot_PistolSlot_LW'.default.DISABLE_LW_PISTOL_SLOT &&
+			class'CHItemSlot_PistolSlot_LW'.static.IsWeaponAllowedInPistolSlot(WeaponTemplate))
 	{
 		// Allow the weapon to be equipped.
 		DisabledReason = "";
@@ -2479,6 +2578,103 @@ static function UpdateChosenActivities()
 	UpdateRetribution();
 }
 
+static function UpdateChosenSabotages()
+{
+	UpdateWeaponLockers();
+	UpdateLabStorage();
+	UpdateSecureStorage();
+}
+
+
+static function UpdateWeaponLockers()
+{
+	local X2SabotageTemplate Template;
+
+	Template = X2SabotageTemplate(class'X2StrategyElementTemplateManager'.static.GetStrategyElementTemplateManager().FindStrategyElementTemplate('Sabotage_WeaponLockers'));
+	Template.CanActivateFn = CanActivateWeaponLockers;
+}
+
+static function UpdateLabStorage()
+{
+	local X2SabotageTemplate Template;
+
+	Template = X2SabotageTemplate(class'X2StrategyElementTemplateManager'.static.GetStrategyElementTemplateManager().FindStrategyElementTemplate('Sabotage_LabStorage'));
+	Template.CanActivateFn = CanActivateLabStorage;
+}
+static function UpdateSecureStorage()
+{
+	local X2SabotageTemplate Template;
+
+	Template = X2SabotageTemplate(class'X2StrategyElementTemplateManager'.static.GetStrategyElementTemplateManager().FindStrategyElementTemplate('Sabotage_SecureStorage'));
+	Template.CanActivateFn = CanActivateSecureStorage;
+}
+function bool CanActivateWeaponLockers()
+{
+	local XComGameStateHistory History;
+	local XComGameState_HeadquartersXCom XComHQ;
+	local XComGameState_Item ItemState;
+	local StateObjectReference ItemRef;
+	local X2WeaponUpgradeTemplate UpgradeTemplate;
+	local int NumUpgrades, MinMods;
+
+	MinMods = `ScaleStrategyArrayInt(class'X2StrategyElement_DefaultSabotages'.default.MinWeaponLockersMods);
+	
+	NumUpgrades = 10;
+	History = `XCOMHISTORY;
+	XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+
+	foreach XComHQ.Inventory(ItemRef)
+	{
+		ItemState = XComGameState_Item(History.GetGameStateForObjectID(ItemRef.ObjectID));
+
+		if(ItemState != none)
+		{
+			UpgradeTemplate = X2WeaponUpgradeTemplate(ItemState.GetMyTemplate());
+
+			if(UpgradeTemplate != none)
+			{
+				NumUpgrades++;
+				if(NumUpgrades >= MinMods)
+				{
+					return true;
+				}
+			}
+		}
+	}
+	return false;
+}
+function bool CanActivateLabStorage()
+{
+	local XComGameStateHistory History;
+	local XComGameState_HeadquartersXCom XComHQ;
+	local XComGameState_Item ItemState;
+	local StateObjectReference ItemRef;
+	local int NumPads, MinPads;
+	NumPads = 0;
+	History = `XCOMHISTORY;
+	XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+	MinPads = `ScaleStrategyArrayInt(class'X2StrategyElement_DefaultSabotages'.default.LabStorageMinDatapads);
+	foreach XComHQ.Inventory(ItemRef)
+	{
+		ItemState = XComGameState_Item(History.GetGameStateForObjectID(ItemRef.ObjectID));
+
+		if(ItemState != none && (ItemState.GetMyTemplateName() == 'AdventDatapad' || ItemState.GetMyTemplateName() == 'AlienDatapad'))
+		{
+			NumPads++;
+			if(NumPads >= MinPads)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+static function bool CanActivateSecureStorage()
+{
+	return (class'UIUtilities_Strategy'.static.GetResource('EleriumCore') >= `ScaleStrategyArrayInt(class'X2StrategyElement_DefaultSabotages'.default.MinSecureStorageCores) && class'X2StrategyElement_DefaultSabotages'.static.ExistsValidStaffForWounding());
+}
 static function UpdateTraining()
 {
 	local X2ChosenActionTemplate Template;
@@ -2709,6 +2905,154 @@ static function XComGameState_WorldRegion ChooseRetributionRegion(XComGameState_
 	return RegionState;
 }
 
+// This takes on a bunch of exceptions to color ability icons
+static function EHLDelegateReturn OverrideAbilityIconColors(XComGameState_Ability AbilityState, bool IsObjectiveAbility, out string BackgroundColor, out string ForegroundColor)
+{
+	local Name						AbilityName;
+	local X2AbilityTemplate			AbilityTemplate;
+	local XComGameState_Unit		UnitState;
+	local XComGameState_Item		WeaponState;
+	local array<X2WeaponUpgradeTemplate> WeaponUpgrades;
+	local int k, k2, ActionPointCost;
+	local bool IsFree, IsTurnEnding, IsPsionic;
+	local UnitValue FreeReloadValue, CountUnitValue;
+	local X2AbilityCost_ActionPoints		ActionPoints;
+
+	// Easy handling of abilities that target objectives
+	if (IsObjectiveAbility && class'LWTemplateMods'.default.USE_ACTION_ICON_COLORS)
+	{
+		BackgroundColor = class'LWTemplateMods'.default.ICON_COLOR_OBJECTIVE;
+		return EHLDR_NoInterrupt;
+	}
+
+	// Drop out if the existing icon color is not "Variable"
+	if (BackgroundColor != "Variable")
+	{
+		return EHLDR_NoInterrupt;
+	}
+
+	// Now deal with the "Variable" ability icons
+	AbilityTemplate = AbilityState.GetMyTemplate();
+	AbilityName = AbilityState.GetMyTemplateName();
+	UnitState = XComGameState_Unit(`XCOMHISTORY.GetGameStateForObjectID(AbilityState.OwnerStateObject.ObjectID));
+	WeaponState = AbilityState.GetSourceWeapon();
+	IsPsionic = AbilityTemplate.AbilitySourceName == 'eAbilitySource_Psionic';
+
+	if (UnitState == none)
+	{
+		`LWTRACE ("No UnitState found for OverrideAbilityIconColors");
+		return EHLDR_NoInterrupt;
+	}
+
+	// Salvo, Quickburn, Holotarget
+	for (k = 0; k < AbilityTemplate.AbilityCosts.Length; k++)
+	{
+		ActionPoints = X2AbilityCost_ActionPoints(AbilityTemplate.AbilityCosts[k]);
+		if (ActionPoints != none)
+		{
+			ActionPointCost = ActionPoints.iNumPoints;
+			if (ActionPoints.bAddWeaponTypicalCost)
+			{
+				ActionPointCost = X2WeaponTemplate(WeaponState.GetMyTemplate()).iTypicalActionCost;
+			}
+
+			IsFree = ActionPoints.bFreeCost;
+			IsTurnEnding = ActionPoints.bConsumeAllPoints;
+
+			if (IsTurnEnding)
+			{
+				// Handle DoNotConsumeAllSoldierAbilities
+				for (k2 = 0; k2 < ActionPoints.DoNotConsumeAllSoldierAbilities.Length; k2++)
+				{
+					if (UnitState.HasSoldierAbility(ActionPoints.DoNotConsumeAllSoldierAbilities[k2], true))
+					{
+						IsTurnEnding = false;
+						break;
+					}
+				}
+
+				// Handle Quickdraw
+				if (X2AbilityCost_QuickdrawActionPoints(ActionPoints) != none && UnitState.HasSoldierAbility('Quickdraw'))
+				{
+					IsTurnEnding = false;
+				}
+			}
+		}
+	}
+
+	switch (AbilityName)
+	{
+		case 'ThrowGrenade':
+			if (UnitState.AffectedByEffectNames.Find('RapidDeploymentEffect') != -1)
+			{
+				if (class'X2Effect_RapidDeployment'.default.VALID_GRENADE_TYPES.Find(WeaponState.GetMyTemplateName()) != -1)
+				{
+					IsTurnEnding = false;
+					IsFree = true;
+				}
+			}
+			break;
+		case 'LaunchGrenade':
+			if (UnitState.AffectedByEffectNames.Find('RapidDeploymentEffect') != -1)
+			{
+				if (class'X2Effect_RapidDeployment'.default.VALID_GRENADE_TYPES.Find(WeaponState.GetLoadedAmmoTemplate(AbilityState).DataName) != -1)
+				{
+					IsTurnEnding = false;
+					IsFree = true;
+				}
+			}
+			break;
+		case 'ArcThrowerStun':
+		case 'EMPulser':
+		case 'ChainLightning':
+			if (UnitState.AffectedByEffectNames.Find(class'X2Ability_XMBPerkAbilitySet'.default.QuickZapEffectName) != -1)
+			{
+				UnitState.GetUnitValue('QuickZap_LW_Uses', CountUnitValue);
+				if (CountUnitValue.fValue == 0)
+				{
+					IsTurnEnding = false;
+					IsFree = true;
+				}
+			}
+			break;
+		case 'LWFlamethrower':
+		case 'Roust':
+		case 'Firestorm':
+			if (UnitState.AffectedByEffectNames.Find('QuickburnEffect') != -1)
+			{
+				IsTurnEnding = false;
+				IsFree = true;
+			}
+			break;
+		case 'Reload':
+			WeaponUpgrades = WeaponState.GetMyWeaponUpgradeTemplates();
+			for (k = 0; k < WeaponUpgrades.Length; k++)
+			{
+				if (WeaponUpgrades[k].NumFreeReloads > 0)
+				{
+					UnitState.GetUnitValue ('FreeReload', FreeReloadValue);
+					if (FreeReloadValue.fValue < WeaponUpgrades[k].NumFreeReloads)
+					{
+						IsTurnEnding = false;
+						IsFree = true;
+					}
+					break;
+				}
+			}
+			break;
+		case 'PlaceEvacZone':
+		case 'PlaceDelayedEvacZone':
+			`LWTRACE ("Attempting to change EVAC color");
+			class'XComGameState_BattleData'.static.HighlightObjectiveAbility(AbilityName, true);
+			return EHLDR_NoInterrupt;
+		default: break;
+	}
+
+	class'Utilities_LW'.static.GetAbilityIconColor(IsObjectiveAbility, IsFree, IsPsionic, IsTurnEnding, ActionPointCost, BackgroundColor, ForegroundColor);
+
+	return EHLDR_NoInterrupt;
+}
+
 //=========================================================================================
 //================= BEGIN LONG WAR ABILITY TAG HANDLER ====================================
 //=========================================================================================
@@ -2722,6 +3066,7 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 	local StateObjectReference UnitRef;
 	local XComGameState_Unit UnitState;
 	local int NumTiles;
+	local XComGameState_HeadquartersXCom XComHQ;
 
 	Type = name(InString);
 	switch(Type)
@@ -2789,6 +3134,9 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 		case 'MULTI_TARGETING_COOLDOWN_LW':
 			OutString = string(class'X2Ability_LW_SharpshooterAbilitySet'.default.MULTI_TARGETING_COOLDOWN);
 			return true;
+		case 'BURNOUT_RADIUS_LW':
+			OutString = Repl(string(class'X2Ability_LW_TechnicalAbilitySet'.default.BURNOUT_RADIUS), "0", "");
+			return true;
 		case 'HIGH_PRESSURE_CHARGES_LW':
 			Outstring = string(class'X2Ability_LW_TechnicalAbilitySet'.default.FLAMETHROWER_HIGH_PRESSURE_CHARGES);
 			return true;
@@ -2796,7 +3144,7 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 			Outstring = string(class'X2Ability_LW_TechnicalAbilitySet'.default.FLAMETHROWER_CHARGES);
 			return true;
 		case 'FIRESTORM_DAMAGE_BONUS_LW':
-			Outstring = string(class'X2Ability_LW_TechnicalAbilitySet'.default.FIRESTORM_DAMAGE_BONUS);
+			Outstring = string(int(class'X2Ability_LW_TechnicalAbilitySet'.default.FIRESTORM_DAMAGE_BONUS));
 			return true;
 		case 'NANOFIBER_HEALTH_BONUS_LW':
 			Outstring = string(class'X2Ability_ItemGrantedAbilitySet'.default.NANOFIBER_VEST_HP_BONUS);
@@ -2810,6 +3158,9 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 		case 'ALPHA_MIKE_FOXTROT_DAMAGE_LW':
 			Outstring = string(class'X2Ability_LW_SharpshooterAbilitySet'.default.ALPHAMIKEFOXTROT_DAMAGE);
 			return true;
+		case 'ALPHA_MIKE_FOXTROT_CRIT_DAMAGE_LW':
+			Outstring = string(class'X2Ability_LW_SharpshooterAbilitySet'.default.ALPHAMIKEFOXTROT_DAMAGE / 2);
+			return true;			
 		case 'ROCKETSCATTER':
 			TacticalHUD = UITacticalHUD(`SCREENSTACK.GetScreen(class'UITacticalHUD'));
 			if (TacticalHUD != none)
@@ -2851,41 +3202,74 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 		case 'COMBAT_FITNESS_DEFENSE_LW':
 			Outstring = string(class'X2Ability_LW_RangerAbilitySet'.default.COMBAT_FITNESS_DEFENSE);
 			return true;
+		case 'RUPTURE_CRIT_BONUS_LW':
+			Outstring = string(class'LWTemplateMods'.default.RUPTURE_CRIT_BONUS);
+			return true;
+		case 'SCANNING_PROTOCOL_INITIAL_CHARGES_LW':
+			Outstring = string(class'X2LWAbilitiesModTemplate'.default.SCANNING_PROTOCOL_INITIAL_CHARGES);
+			return true;
 		case 'COMBATIVES_DODGE_LW':
 			Outstring = string(class'X2Ability_LW_GunnerAbilitySet'.default.COMBATIVES_DODGE);
 			return true;
+		case 'COUNTERATTACK_DODGE_AMOUNT_LW':
+			Outstring = string(class'X2Ability_LW_GunnerAbilitySet'.default.COUNTERATTACK_DODGE_AMOUNT);
+			return true;
 		case 'SPRINTER_MOBILITY_LW':
 			Outstring = string(class'X2Ability_LW_RangerAbilitySet'.default.SPRINTER_MOBILITY);
+			return true;
+		case 'HEAT_WARHEADS_PIERCE_LW':
+			Outstring = string(class'X2Ability_LW_GrenadierAbilitySet'.default.HEAT_WARHEADS_PIERCE);
+			return true;
+		case 'HEAT_WARHEADS_SHRED_LW':
+			Outstring = string(class'X2Ability_LW_GrenadierAbilitySet'.default.HEAT_WARHEADS_SHRED);
+			return true;
+		case 'NEEDLE_BONUS_UNARMORED_DMG_LW':
+			Outstring = string(class'X2Ability_LW_GrenadierAbilitySet'.default.NEEDLE_BONUS_UNARMORED_DMG);
+			return true;
+		case 'BLUESCREENBOMB_HACK_DEFENSE_CHANGE_LW':
+			Outstring = string(-class'X2Ability_LW_GrenadierAbilitySet'.default.BLUESCREENBOMB_HACK_DEFENSE_CHANGE);
 			return true;
 		case 'REDSCREEN_EFFECT_LW':
 			Outstring = string(-class'X2Item_LWUtilityItems'.default.REDSCREEN_HACK_DEFENSE_CHANGE);
 			return true;
 		case 'SCOPE_BSC_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_BSC_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_BSC_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.SCOPE_EMPOWER_BONUS : 0));
 			return true;
 		case 'SCOPE_ADV_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_ADV_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_ADV_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.SCOPE_EMPOWER_BONUS : 0));
 			return true;
 		case 'SCOPE_SUP_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_SUP_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.SCOPE_SUP_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.SCOPE_EMPOWER_BONUS : 0));
 			return true;
 		case 'TRIGGER_BSC_AIM_BONUS':
-			Outstring = string(round(class'X2Ability_LW_GearAbilities'.default.TRIGGER_BSC_AIM_BONUS * (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(round((class'X2Ability_LW_GearAbilities'.default.TRIGGER_BSC_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.TRIGGER_EMPOWER_BONUS : 0)) 
+				* (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
 			return true;
 		case 'TRIGGER_ADV_AIM_BONUS':
-			Outstring = string(round(class'X2Ability_LW_GearAbilities'.default.TRIGGER_ADV_AIM_BONUS * (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(round((class'X2Ability_LW_GearAbilities'.default.TRIGGER_ADV_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.TRIGGER_EMPOWER_BONUS : 0)) 
+				* (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
 			return true;
 		case 'TRIGGER_SUP_AIM_BONUS':
-			Outstring = string(round(class'X2Ability_LW_GearAbilities'.default.TRIGGER_SUP_AIM_BONUS * (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(round((class'X2Ability_LW_GearAbilities'.default.TRIGGER_SUP_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.TRIGGER_EMPOWER_BONUS : 0)) 
+				* (1.0f - class'X2AbilityToHitCalc_StandardAim'.default.REACTION_FINALMOD)));
 			return true;
 		case 'STOCK_BSC_SW_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_BSC_SW_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_BSC_SW_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.STOCK_EMPOWER_BONUS : 0));
 			return true;
 		case 'STOCK_ADV_SW_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_ADV_SW_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_ADV_SW_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.STOCK_EMPOWER_BONUS : 0));
 			return true;
 		case 'STOCK_SUP_SW_AIM_BONUS':
-			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_SUP_SW_AIM_BONUS);
+			XComHQ = XComGameState_HeadquartersXCom(`XCOMHISTORY.GetSingleGameStateObjectForClass(class'XComGameState_HeadquartersXCom'));
+			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_SUP_SW_AIM_BONUS + (XComHQ.bEmpoweredUpgrades ? class'X2Ability_LW_GearAbilities'.default.STOCK_EMPOWER_BONUS : 0));
 			return true;
 		case 'STOCK_BSC_GF_CHANCE':
 			Outstring = string(class'X2Ability_LW_GearAbilities'.default.STOCK_BSC_SUCCESS_CHANCE);
@@ -2905,6 +3289,9 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 		case 'FLUSH_STATEFFECT_DURATION':
 			Outstring = string(class'X2Ability_LW_GunnerAbilitySet'.default.FLUSH_STATEFFECT_DURATION);
 			return true;
+		case 'FLUSH_AIM_BONUS':
+			Outstring = string(class'X2Ability_LW_GunnerAbilitySet'.default.FLUSH_AIM_BONUS);
+			return true;
 		case 'MIND_SCORCH_BURN_CHANCE':
 			Outstring = string(class'X2LWAbilitiesModTemplate'.default.MIND_SCORCH_BURN_CHANCE);
 			return true;
@@ -2913,6 +3300,45 @@ static function bool AbilityTagExpandHandler(string InString, out string OutStri
 			return true;
 		case 'PHASEWALK_CAST_RANGE_TILES':
 			Outstring = string(class'X2Ability_LW_PsiOperativeAbilitySet'.default.PHASEWALK_CAST_RANGE_TILES);
+			return true;
+		case 'SMOKEGRENADE_HITMOD_LW':
+			Outstring = string(-class'X2Item_DefaultGrenades'.default.SMOKEGRENADE_HITMOD);
+			return true;
+		case 'STREET_SWEEPER2_UNARMORED_DAMAGE_BONUS_LW':
+			Outstring = string(class'X2Ability_LW_AssaultAbilitySet'.default.STREET_SWEEPER2_UNARMORED_DAMAGE_BONUS);
+			return true;
+		case 'CHAIN_LIGHTNING_AIM_MOD_LW':
+			Outstring = string(class'X2Ability_LW_AssaultAbilitySet'.default.CHAIN_LIGHTNING_AIM_MOD);
+			return true;
+		case 'STUNGUNNER_BONUS_CV_LW':
+			Outstring = string(class'X2Effect_StunGunner'.default.STUNGUNNER_BONUS_CV);
+			return true;
+		case 'STUNGUNNER_BONUS_BM_LW':
+			Outstring = string(class'X2Effect_StunGunner'.default.STUNGUNNER_BONUS_BM);
+			return true;
+		case 'EMPULSER_HACK_DEFENSE_CHANGE_LW':
+			Outstring = string(-class'X2Ability_LW_AssaultAbilitySet'.default.EMPULSER_HACK_DEFENSE_CHANGE);
+			return true;
+		case 'RESCUE_BONUS_DODGE':
+			Outstring = string(class'X2Ability_LW_SpecialistAbilitySet'.default.RESCUE_BONUS_DODGE);
+			return true;
+		case 'RESCUE_BONUS_MOBILITY':
+			Outstring = string(class'X2Ability_LW_SpecialistAbilitySet'.default.RESCUE_BONUS_MOBILITY);
+			return true;
+		case 'RESCUE_CV_CHARGES':
+			Outstring = string(class'X2Ability_LW_SpecialistAbilitySet'.default.RESCUE_CV_CHARGES);
+			return true;
+		case 'IMPACT_COMPENSATION_PCT_DR':
+			Outstring = string(int(class'X2Ability_LW_ChosenAbilities'.default.IMPACT_COMPENSATION_PCT_DR * 100));
+			return true;
+		case 'IMPACT_COMPENSATION_MAX_STACKS':
+			Outstring = string(class'X2Ability_LW_ChosenAbilities'.default.IMPACT_COMPENSATION_MAX_STACKS);
+			return true;
+		case 'SHIELD_ALLY_PCT_DR':
+			Outstring = string(int(class'X2Ability_LW_ChosenAbilities'.default.SHIELD_ALLY_PCT_DR * 100));
+			return true;
+		case 'CHOSEN_RETRIBUTION_DURATION':
+			OutString = string(default.CHOSEN_RETRIBUTION_DURATION);
 			return true;
 		default:
 			return false;
@@ -2923,7 +3349,10 @@ static function bool AbilityTagExpandHandler_CH(string InString, out string OutS
 {
 	local name Type;
 	local XComGameState_Ability AbilityState;
+	local XComGameState_Effect EffectState;
+	local XComGameState_Unit UnitState;
 	local X2AbilityTemplate AbilityTemplate;
+	local int ImpactCompensationStacks;
 
 	Type = name(InString);
 	switch(Type)
@@ -2944,6 +3373,32 @@ static function bool AbilityTagExpandHandler_CH(string InString, out string OutS
 				// LW2 doesn't subtract 1 from cooldowns as a general rule, so to keep it consistent
 				// there is substitute tag
 				OutString = string(AbilityTemplate.AbilityCooldown.iNumTurns);
+			}
+		}
+		return true;
+	case 'IMPACT_COMPENSATION_CURRENT_DR':
+		OutString = "0";
+		AbilityState = XComGameState_Ability(ParseObj);
+		if (AbilityState != none)
+		{
+			UnitState = XComGameState_Unit(`XCOMHISTORY.GetGameStateForObjectID(AbilityState.OwnerStateObject.ObjectID));
+		}
+		else
+		{
+			EffectState = XComGameState_Effect(ParseObj);
+			if (EffectState != none)
+			{
+				UnitState = XComGameState_Unit(`XCOMHISTORY.GetGameStateForObjectID(EffectState.ApplyEffectParameters.TargetStateObjectRef.ObjectID));
+			}
+		}
+
+		if (UnitState != none)
+		{
+			ImpactCompensationStacks = int(class'Utilities_LW'.static.GetUnitValue(UnitState, class'X2Ability_PerkPackAbilitySet2'.const.DAMAGED_COUNT_NAME));
+			if (ImpactCompensationStacks > 0)
+			{
+				OutString = string(int((1 - (1 - class'X2Ability_LW_ChosenAbilities'.default.IMPACT_COMPENSATION_PCT_DR) **
+						Min(ImpactCompensationStacks, class'X2Ability_LW_ChosenAbilities'.default.IMPACT_COMPENSATION_MAX_STACKS)) * 100));
 			}
 		}
 		return true;
@@ -3689,7 +4144,8 @@ exec function LWForceEvac()
 
 exec function LWPrintVersion()
 {
-	`Log("LongWar2 Version: " $ class'LWVersion'.static.GetVersionString());
+	`Log("Long War of the Chosen Version: " $ class'LWVersion'.static.GetVersionString());
+	class'Helpers'.static.OutputMsg("Long War of the Chosen Version: " $ class'LWVersion'.static.GetVersionString());
 }
 
 exec function LWAddFortressDoom(optional int DoomToAdd = 1)
@@ -4005,6 +4461,7 @@ static function RespecSoldier(XComGameState_Unit UnitState)
 	local XComGameState_HeadquartersXCom	XComHQ;
 	local name								ClassName;
 	local int								i, NumRanks, iXP;
+	local array<XComGameState_Item>			EquippedImplants;
 
 	History = `XCOMHISTORY;
 
@@ -4022,6 +4479,13 @@ static function RespecSoldier(XComGameState_Unit UnitState)
 	if (ClassName == 'Random' || ClassName == 'Rookie')
 	{
 		ClassName = XComHQ.SelectNextSoldierClass();
+	}
+
+	// Remove PCSes because they mess up the base stats after the reset.
+	EquippedImplants = UnitState.GetAllItemsInSlot(eInvSlot_CombatSim);
+	for (i = 0; i < EquippedImplants.Length; i++)
+	{
+		UnitState.RemoveItemFromInventory(EquippedImplants[i], NewGameState);
 	}
 
 	UnitState.AbilityPoints = 0; // Reset Ability Points
@@ -4048,6 +4512,12 @@ static function RespecSoldier(XComGameState_Unit UnitState)
 	if (iXP > 0)
 	{
 		UnitState.AddXp(iXP);
+	}
+
+	// Restore the PCSes.
+	for (i = 0; i < EquippedImplants.Length; i++)
+	{
+		UnitState.AddItemToInventory(EquippedImplants[i], eInvSlot_CombatSim, NewGameState);
 	}
 
 	if (NewGameState.GetNumGameStateObjects() > 0)
@@ -4162,4 +4632,33 @@ static function bool IsProjectileElementPresent(array<X2UnifiedProjectileElement
         }
     }
     return false;
+}
+
+exec function DumpObjectInfo(int ObjectID)
+{
+	local XComGameStateHistory History;
+	local XComGameState_BaseObject DumpObject;
+
+	History = `XCOMHISTORY;
+
+	DumpObject = History.GetGameStateForObjectID(ObjectID);
+	class'Helpers'.static.OutputMsg("Object class: " $ DumpObject.Class $ ", template: " $ DumpObject.GetMyTemplateName());
+	class'Helpers'.static.OutputMsg("Parent object ID: " $ DumpObject.OwningObjectId);
+}
+
+exec function DumpUnitInfo()
+{
+	local XComGameStateHistory History;
+	local XComGameState_Unit UnitState;
+
+	History = `XCOMHISTORY;
+	foreach History.IterateByClassType(class'XComGameState_Unit', UnitState, eReturnType_Reference, true)
+	{
+		`LWTrace("=== Unit " $ UnitState.ObjectID $ " ===");
+		`LWTrace("  Name: " $ UnitState.GetFullName());
+		`LWTrace("  Unit template: " $ UnitState.GetMyTemplateName());
+		`LWTrace("  Unit class: " $ UnitState.GetSoldierClassTemplateName());
+	}
+
+	class'Helpers'.static.OutputMsg("Unit information dumped to log");
 }
